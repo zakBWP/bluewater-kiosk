@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { app, BrowserWindow, ipcMain } from 'electron';
-import { openDatabase, COMMAND_TYPES } from './src/db.js';
+import { openDatabase } from './src/db.js';
+import { COMMAND_TYPES, COMMAND_STRUCTURES } from './src/command-types.js';
 import { DEFAULT_PRINTER_NAME, printTestReceipt } from './src/printer.js';
 
 let db;
@@ -24,10 +25,13 @@ app.whenReady().then(() => {
 
   ipcMain.handle('app:info', () => ({
     commandTypes: COMMAND_TYPES,
+    commandStructures: COMMAND_STRUCTURES,
     currentYear: new Date().getFullYear(),
   }));
   ipcMain.handle('jobs:list', () => db.listJobs());
+  ipcMain.handle('jobs:get', (event, id) => db.getJob(id));
   ipcMain.handle('jobs:create', (event, input) => ({ error: db.createJob(input) }));
+  ipcMain.handle('jobs:update', (event, id, input) => ({ error: db.updateJob(id, input) }));
   ipcMain.handle('printer:list', async (event) => {
     const printers = await event.sender.getPrintersAsync();
     return printers

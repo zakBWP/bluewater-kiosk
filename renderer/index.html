@@ -8,40 +8,83 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <h1>Create Job</h1>
-  <p id="error" class="error" hidden></p>
-  <form id="job-form">
-    <label for="name">Job name</label>
-    <input id="name" name="name" type="text" required>
+  <!-- Jobs list: the start screen -->
+  <section id="view-list" class="view" hidden>
+    <div class="header">
+      <h1>Jobs</h1>
+      <a class="button primary" href="#/jobs/new">Create Job</a>
+    </div>
+    <p id="no-jobs" class="muted" hidden>No jobs yet. Create one to get started.</p>
+    <ul id="job-list" class="job-list" hidden></ul>
 
-    <label for="commandType">Command Type</label>
-    <select id="commandType" name="commandType" required>
-      <option value="" selected disabled>Select a command type</option>
-    </select>
-
-    <label for="year">Year</label>
-    <input id="year" name="year" type="number" min="1900" max="2100" step="1" required>
-
-    <label for="parts">Number of parts</label>
-    <input id="parts" name="parts" type="number" min="1" step="1" required value="4">
-
-    <button type="submit">Create Job</button>
-  </form>
-
-  <section id="jobs" hidden>
-    <h2>Jobs</h2>
-    <ul id="job-list"></ul>
+    <section class="printer">
+      <h2>Printer</h2>
+      <label for="printerName">Printer</label>
+      <div class="row">
+        <select id="printerName"></select>
+        <button id="refresh-printers" type="button">Refresh</button>
+      </div>
+      <button id="print-test" type="button">Print Test</button>
+      <p id="print-status"></p>
+    </section>
   </section>
 
-  <section>
-    <h2>Printer</h2>
-    <label for="printerName">Printer</label>
-    <div class="row">
-      <select id="printerName"></select>
-      <button id="refresh-printers" type="button">Refresh</button>
+  <!-- Create Job / Edit Job -->
+  <section id="view-form" class="view" hidden>
+    <a class="back" href="#/jobs">← Jobs</a>
+    <h1 id="form-title">Create Job</h1>
+    <p id="error" class="error" hidden></p>
+    <form id="job-form">
+      <label for="name">Job name</label>
+      <input id="name" name="name" type="text" required>
+
+      <label for="commandType">Command Type</label>
+      <select id="commandType" name="commandType" required>
+        <option value="" selected disabled>Select a command type</option>
+      </select>
+
+      <label for="year">Year</label>
+      <input id="year" name="year" type="number" min="1900" max="2100" step="1" required>
+
+      <label for="parts">Number of parts</label>
+      <input id="parts" name="parts" type="number" min="1" step="1" required value="4">
+
+      <div id="structure" class="structure" hidden>
+        <h2>Departments &amp; Divisions</h2>
+        <p id="structure-empty" class="muted" hidden>No departments yet.</p>
+        <table id="structure-table" class="structure-table">
+          <thead><tr><th>Department</th><th>Divisions</th><th></th></tr></thead>
+          <tbody id="structure-rows"></tbody>
+        </table>
+        <button id="add-department" type="button">+ Add Department</button>
+      </div>
+
+      <div class="actions">
+        <button id="form-submit" class="primary" type="submit">Create Job</button>
+        <a id="form-cancel" class="button" href="#/jobs">Cancel</a>
+      </div>
+    </form>
+  </section>
+
+  <!-- Job details -->
+  <section id="view-job" class="view" hidden>
+    <a class="back" href="#/jobs">← Jobs</a>
+    <h1 id="job-name"></h1>
+    <dl class="details">
+      <dt>Command Type</dt><dd id="job-commandType"></dd>
+      <dt>Year</dt><dd id="job-year"></dd>
+      <dt>Number of parts</dt><dd id="job-parts"></dd>
+      <dt>Created</dt><dd id="job-created"></dd>
+    </dl>
+    <h2>Departments &amp; Divisions</h2>
+    <p id="job-structure-empty" class="muted" hidden>No departments.</p>
+    <table id="job-structure" class="structure-table">
+      <thead><tr><th>Department</th><th>Divisions</th></tr></thead>
+      <tbody id="job-structure-rows"></tbody>
+    </table>
+    <div class="actions">
+      <a id="job-edit" class="button" href="#/jobs">Edit</a>
     </div>
-    <button id="print-test" type="button">Print Test</button>
-    <p id="print-status"></p>
   </section>
 
   <script type="module" src="renderer.js"></script>
