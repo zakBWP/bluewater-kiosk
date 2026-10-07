@@ -32,6 +32,7 @@ const entryRateLabel = document.getElementById('entry-rateRank-label');
 const entryPayGrade = document.getElementById('entry-payGrade');
 const entryError = document.getElementById('entry-error');
 const entrySubmit = document.getElementById('entry-submit');
+const entrySuccess = document.getElementById('entry-success');
 const entryStatus = document.getElementById('entry-status');
 const entryStatusText = document.getElementById('entry-status-text');
 const entryReprint = document.getElementById('entry-reprint');
@@ -49,6 +50,7 @@ let shownCommandType = ''; // the command type whose departments are in the edit
 let pendingFocus = null; // a department or division whose input should get focus after rendering
 let entryJob = null; // the job open on the entry screen
 let lastEntryUuid = null; // the most recent entry, for reprinting its ticket
+let successTimer = null;
 
 function show(name) {
   for (const [key, el] of Object.entries(views)) el.hidden = key !== name;
@@ -300,6 +302,26 @@ function showEntryError(message) {
   entryError.hidden = !message;
 }
 
+function hideSuccess() {
+  clearTimeout(successTimer);
+  entrySuccess.hidden = true;
+}
+
+// Shows the success message next to Submit for 5 seconds, then returns to the top of the
+// form for the next person.
+function flashSuccess() {
+  hideSuccess();
+  entrySuccess.hidden = false;
+  entrySuccess.scrollIntoView({ block: 'nearest' });
+  successTimer = setTimeout(() => {
+    entrySuccess.hidden = true;
+    if (!views.entry.hidden) {
+      window.scrollTo(0, 0);
+      entryDepartment.focus();
+    }
+  }, 5000);
+}
+
 function showEntryStatus(message, { error = false, reprint = false } = {}) {
   entryStatusText.textContent = message;
   entryStatus.classList.toggle('error', error);
@@ -317,6 +339,7 @@ async function showEntryForm(id) {
   lastEntryUuid = null;
   entryForm.reset();
   showEntryError(null);
+  hideSuccess();
   entryStatus.hidden = true;
   entryJobName.textContent = job.name;
   entryRateLabel.textContent = await window.api.rateLabel(job.commandType);
@@ -335,6 +358,7 @@ entryDepartment.addEventListener('change', updateDivisions);
 entryForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   if (entrySubmit.disabled) return; // already submitting: don't save twice
+  hideSuccess();
   entrySubmit.disabled = true;
   entrySubmit.textContent = 'Submitting…';
   const { error, entry, printError } = await window.api.createEntry(
@@ -356,14 +380,15 @@ entryForm.addEventListener('submit', async (event) => {
   updateDivisions();
   await updateEntryCount();
   lastEntryUuid = entry.uuid;
-  const name = `${entry.firstName} ${entry.lastName}`;
   if (printError) {
+    const name = `${entry.firstName} ${entry.lastName}`;
     showEntryStatus(`Saved ${name}'s information, but the ticket didn't print: ${printError}`, { error: true, reprint: true });
+    window.scrollTo(0, 0);
+    entryDepartment.focus();
   } else {
-    showEntryStatus(`Saved and printed a ticket for ${name}.`);
+    entryStatus.hidden = true;
+    flashSuccess();
   }
-  window.scrollTo(0, 0);
-  entryDepartment.focus();
 });
 
 entryReprint.addEventListener('click', async () => {
@@ -373,7 +398,8 @@ entryReprint.addEventListener('click', async () => {
   if (printError) {
     showEntryStatus(`The ticket still didn't print: ${printError}`, { error: true, reprint: true });
   } else {
-    showEntryStatus('Ticket printed.');
+    entryStatus.hidden = true;
+    flashSuccess();
   }
 });
 
