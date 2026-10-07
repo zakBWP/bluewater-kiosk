@@ -1,7 +1,9 @@
-const { spawn } = require('child_process');
-const { ThermalPrinter, PrinterTypes } = require('node-thermal-printer');
+import { spawn } from 'node:child_process';
+import thermalPrinter from 'node-thermal-printer';
 
-const DEFAULT_PRINTER_NAME = process.platform === 'win32' ? 'EPSON TM-m10 Receipt5' : 'EPSON_TM_m10';
+const { ThermalPrinter, PrinterTypes } = thermalPrinter;
+
+export const DEFAULT_PRINTER_NAME = process.platform === 'win32' ? 'EPSON TM-m10 Receipt5' : 'EPSON_TM_m10';
 
 // macOS/Linux: hand the bytes to CUPS as a raw job, so the driver passes them through untouched.
 function sendRawCups(printerName, data) {
@@ -23,9 +25,9 @@ function sendRawCups(printerName, data) {
 // Windows: send the bytes to the print queue as a RAW job through the spooler (winspool.drv),
 // which the Epson Advanced Printer Driver passes straight to the printer.
 let winspool;
-function loadWinspool() {
+async function loadWinspool() {
   if (winspool) return winspool;
-  const koffi = require('koffi');
+  const { default: koffi } = await import('koffi');
   const lib = koffi.load('winspool.drv');
   koffi.pointer('HANDLE', koffi.opaque());
   koffi.struct('DOC_INFO_1W', { pDocName: 'str16', pOutputFile: 'str16', pDatatype: 'str16' });
@@ -42,7 +44,7 @@ function loadWinspool() {
 }
 
 async function sendRawWindows(printerName, data) {
-  const w = loadWinspool();
+  const w = await loadWinspool();
   const out = [null];
   if (!w.OpenPrinterW(printerName, out, null)) {
     throw new Error(`Could not open printer "${printerName}". Check the name in Printers & scanners.`);
@@ -79,7 +81,7 @@ function rawInterface(printerName) {
   };
 }
 
-async function printTestReceipt(printerName) {
+export async function printTestReceipt(printerName) {
   const printer = new ThermalPrinter({
     type: PrinterTypes.EPSON,
     interface: rawInterface(printerName),
@@ -111,5 +113,3 @@ async function printTestReceipt(printerName) {
 
   return printer.execute();
 }
-
-module.exports = { DEFAULT_PRINTER_NAME, printTestReceipt };

@@ -1,7 +1,7 @@
-const path = require('path');
-const { app, BrowserWindow, ipcMain } = require('electron');
-const { openDatabase, COMMAND_TYPES } = require('./src/db');
-const { DEFAULT_PRINTER_NAME, printTestReceipt } = require('./src/printer');
+import path from 'node:path';
+import { app, BrowserWindow, ipcMain } from 'electron';
+import { openDatabase, COMMAND_TYPES } from './src/db.js';
+import { DEFAULT_PRINTER_NAME, printTestReceipt } from './src/printer.js';
 
 let db;
 
@@ -10,13 +10,13 @@ function createWindow() {
     width: 900,
     height: 800,
     webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
+      preload: path.join(import.meta.dirname, 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
     },
   });
-  win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
+  win.loadFile(path.join(import.meta.dirname, 'renderer', 'index.html'));
 }
 
 app.whenReady().then(() => {
@@ -28,7 +28,20 @@ app.whenReady().then(() => {
   }));
   ipcMain.handle('jobs:list', () => db.listJobs());
   ipcMain.handle('jobs:create', (event, input) => ({ error: db.createJob(input) }));
-  ipcMain.handle('printer:getName', () => db.getSetting('printerName', DEFAULT_PRINTER_NAME));
+  ipcMain.handle('printer:list', async (event) => {
+    const printers = await event.sender.getPrintersAsync();
+    return printers
+      .map(({ name, displayName }) => ({ name, displayName: displayName || name }))
+      .sort((a, b) => a.displayName.localeCompare(b.displayName));
+  });
+  ipcMain.handle('printer:getName', () => {
+    const saved = db.getSetting('printerName', null);
+    return { name: saved || DEFAULT_PRINTER_NAME, saved: saved !== null };
+  });
+  ipcMain.handle('printer:setName', (event, printerName) => {
+    const name = String(printerName || '').trim();
+    if (name) db.setSetting('printerName', name);
+  });
   ipcMain.handle('printer:test', async (event, printerName) => {
     const name = String(printerName || '').trim();
     if (!name) return { error: 'Enter a printer name.' };

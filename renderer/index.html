@@ -35,12 +35,15 @@
 
   <section>
     <h2>Printer</h2>
-    <label for="printerName">Printer name</label>
-    <input id="printerName" type="text">
+    <label for="printerName">Printer</label>
+    <div class="row">
+      <select id="printerName"></select>
+      <button id="refresh-printers" type="button">Refresh</button>
+    </div>
     <button id="print-test" type="button">Print Test</button>
     <p id="print-status"></p>
   </section>
 
-  <script src="renderer.js"></script>
+  <script type="module" src="renderer.js"></script>
 </body>
 </html>

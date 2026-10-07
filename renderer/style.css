@@ -4,5 +4,8 @@ input, select { width: 100%; padding: 8px; margin-top: 4px; box-sizing: border-b
 button { margin-top: 24px; padding: 10px 20px; font-size: 1rem; cursor: pointer; }
 button:disabled { cursor: progress; }
 section { margin-top: 32px; }
+.row { display: flex; gap: 8px; align-items: center; }
+.row select { flex: 1; }
+.row button { margin-top: 4px; padding: 8px 14px; }
 .error { color: #b00020; }
 ul { padding-left: 20px; }

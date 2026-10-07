@@ -3,7 +3,8 @@ const errorEl = document.getElementById('error');
 const jobsSection = document.getElementById('jobs');
 const jobList = document.getElementById('job-list');
 const commandTypeSelect = document.getElementById('commandType');
-const printerNameInput = document.getElementById('printerName');
+const printerSelect = document.getElementById('printerName');
+const refreshButton = document.getElementById('refresh-printers');
 const printButton = document.getElementById('print-test');
 const printStatus = document.getElementById('print-status');
 
@@ -45,14 +46,43 @@ form.addEventListener('submit', async (event) => {
   await renderJobs();
 });
 
+async function loadPrinters() {
+  const [printers, current] = await Promise.all([
+    window.api.listPrinters(),
+    window.api.getPrinterName(),
+  ]);
+  const options = printers.map((p) => new Option(
+    p.displayName === p.name ? p.name : `${p.displayName} (${p.name})`,
+    p.name,
+  ));
+  const installed = printers.some((p) => p.name === current.name);
+  if (current.saved && !installed) {
+    options.push(new Option(`${current.name} (not found)`, current.name));
+  }
+  if (options.length === 0) {
+    const none = new Option('No printers found', '');
+    none.disabled = true;
+    options.push(none);
+  }
+  printerSelect.replaceChildren(...options);
+  if (installed || current.saved) printerSelect.value = current.name;
+  printButton.disabled = !printerSelect.value;
+}
+
+printerSelect.addEventListener('change', () => {
+  window.api.setPrinterName(printerSelect.value);
+});
+
+refreshButton.addEventListener('click', loadPrinters);
+
 printButton.addEventListener('click', async () => {
   printButton.disabled = true;
   printStatus.className = '';
   printStatus.textContent = 'Printing…';
-  const { message, error } = await window.api.printTest(printerNameInput.value);
+  const { message, error } = await window.api.printTest(printerSelect.value);
   printStatus.className = error ? 'error' : '';
   printStatus.textContent = error || message;
-  printButton.disabled = false;
+  printButton.disabled = !printerSelect.value;
 });
 
 (async () => {
@@ -62,6 +92,6 @@ printButton.addEventListener('click', async () => {
     commandTypeSelect.add(new Option(type, type));
   }
   resetForm();
-  printerNameInput.value = await window.api.getPrinterName();
+  await loadPrinters();
   await renderJobs();
 })();

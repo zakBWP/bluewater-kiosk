@@ -1,11 +1,11 @@
-const Database = require('better-sqlite3');
+import Database from 'better-sqlite3';
 
-const COMMAND_TYPES = [
+export const COMMAND_TYPES = [
   'CVN (Nimitz-class)', 'CVN (Ford-class)', 'CG', 'DDG', 'LCC', 'LCS',
   'LHA', 'LHD', 'LPD', 'LSD', 'The Basic School', 'Other',
 ];
 
-function openDatabase(file) {
+export function openDatabase(file) {
   const db = new Database(file);
   // Write-ahead logging: writes go to jobs.db-wal and are merged into jobs.db
   // later, so reads don't block on writes. Creates the -wal/-shm side files.
@@ -66,5 +66,3 @@ function openDatabase(file) {
     close: () => db.close(),
   };
 }
-
-module.exports = { openDatabase, COMMAND_TYPES };

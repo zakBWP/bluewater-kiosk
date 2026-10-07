@@ -1,6 +1,6 @@
 // Prints a test receipt to an ESC/POS printer through the macOS print system (CUPS).
 // Usage: node scripts/print-test.js [printer-name]   (default: EPSON_TM_m10)
-const { spawnSync } = require('child_process');
+import { spawnSync } from 'node:child_process';
 
 const PRINTER = process.argv[2] || 'EPSON_TM_m10';
 
