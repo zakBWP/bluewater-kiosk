@@ -107,8 +107,8 @@ export async function printTestReceipt(printerName) {
   printer.bold(false);
   printer.newLine();
   printer.alignCenter();
-  printer.printQR('testapp:print-test', { cellSize: 6 });
-  printer.println('testapp:print-test');
+  printer.printQR('bluewater-kiosk:print-test', { cellSize: 6 });
+  printer.println('bluewater-kiosk:print-test');
   printer.cut();
 
   return printer.execute();

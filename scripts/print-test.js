@@ -45,8 +45,8 @@ const receipt = Buffer.concat([
   bold(true), text('Bold text'), bold(false),
   feed(1),
   align(1),
-  qr('testapp:job:test'),
-  text('testapp:job:test'),
+  qr('bluewater-kiosk:job:test'),
+  text('bluewater-kiosk:job:test'),
   cut(),
 ]);
 
