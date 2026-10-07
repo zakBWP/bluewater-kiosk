@@ -2,12 +2,23 @@
   "name": "testapp",
   "version": "1.0.0",
   "private": true,
-  "main": "server.js",
+  "main": "main.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "electron .",
+    "rebuild": "electron-rebuild -f -w better-sqlite3",
+    "postinstall": "electron-rebuild -f -w better-sqlite3"
   },
   "dependencies": {
     "better-sqlite3": "^13.0.3",
-    "express": "^5.2.1"
+    "koffi": "^3.3.2",
+    "node-thermal-printer": "^4.6.1"
+  },
+  "devDependencies": {
+    "@electron/rebuild": "^4.2.1",
+    "electron": "^44.6.0"
+  },
+  "allowScripts": {
+    "better-sqlite3@13.0.3": true,
+    "koffi@3.3.2": true
   }
 }

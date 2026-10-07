@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Create Job</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <h1>Create Job</h1>
+  <p id="error" class="error" hidden></p>
+  <form id="job-form">
+    <label for="name">Job name</label>
+    <input id="name" name="name" type="text" required>
+
+    <label for="commandType">Command Type</label>
+    <select id="commandType" name="commandType" required>
+      <option value="" selected disabled>Select a command type</option>
+    </select>
+
+    <label for="year">Year</label>
+    <input id="year" name="year" type="number" min="1900" max="2100" step="1" required>
+
+    <label for="parts">Number of parts</label>
+    <input id="parts" name="parts" type="number" min="1" step="1" required value="4">
+
+    <button type="submit">Create Job</button>
+  </form>
+
+  <section id="jobs" hidden>
+    <h2>Jobs</h2>
+    <ul id="job-list"></ul>
+  </section>
+
+  <section>
+    <h2>Printer</h2>
+    <label for="printerName">Printer name</label>
+    <input id="printerName" type="text">
+    <button id="print-test" type="button">Print Test</button>
+    <p id="print-status"></p>
+  </section>
+
+  <script src="renderer.js"></script>
+</body>
+</html>

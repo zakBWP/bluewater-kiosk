@@ -1,0 +1,8 @@
+body { font-family: system-ui, sans-serif; max-width: 480px; margin: 40px auto; padding: 0 16px; }
+label { display: block; margin-top: 16px; font-weight: 600; }
+input, select { width: 100%; padding: 8px; margin-top: 4px; box-sizing: border-box; font-size: 1rem; }
+button { margin-top: 24px; padding: 10px 20px; font-size: 1rem; cursor: pointer; }
+button:disabled { cursor: progress; }
+section { margin-top: 32px; }
+.error { color: #b00020; }
+ul { padding-left: 20px; }
