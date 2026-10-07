@@ -90,6 +90,18 @@ export function openDatabase(file) {
     );
   `);
 
+  // No two jobs may share a name (ignoring case) and year. This fails while duplicates from
+  // before the rule exist; the check in createJob/updateJob still applies, and the index
+  // is added on a later start once they're gone.
+  try {
+    db.exec('CREATE UNIQUE INDEX IF NOT EXISTS jobs_name_year ON jobs (lower(name), year)');
+  } catch (err) {
+    if (err.code !== 'SQLITE_CONSTRAINT_UNIQUE') throw err;
+  }
+
+  const findDuplicateJob = db.prepare(
+    'SELECT id FROM jobs WHERE lower(name) = lower(?) AND year = ? AND id != ?'
+  );
   const insertJob = db.prepare(
     'INSERT INTO jobs (name, command_type, year, parts) VALUES (?, ?, ?, ?)'
   );
@@ -157,6 +169,12 @@ export function openDatabase(file) {
     return true;
   });
 
+  function duplicateError(job, id = 0) {
+    return findDuplicateJob.get(job.name, job.year, id)
+      ? `A job named "${job.name}" for ${job.year} already exists.`
+      : null;
+  }
+
   return {
     listJobs: () => listJobs.all(),
 
@@ -174,6 +192,8 @@ export function openDatabase(file) {
     createJob(input) {
       const { error, job } = validateJob(input);
       if (error) return error;
+      const duplicate = duplicateError(job);
+      if (duplicate) return duplicate;
       createJobTx(job);
       return null;
     },
@@ -182,6 +202,8 @@ export function openDatabase(file) {
     updateJob(id, input) {
       const { error, job } = validateJob(input);
       if (error) return error;
+      const duplicate = duplicateError(job, Number(id));
+      if (duplicate) return duplicate;
       return updateJobTx(Number(id), job) ? null : 'Job not found.';
     },
 

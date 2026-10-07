@@ -12,28 +12,37 @@
   <section id="view-list" class="view" hidden>
     <div class="header">
       <h1>Jobs</h1>
-      <a class="button primary" href="#/jobs/new">Create Job</a>
+      <div class="header-actions">
+        <a class="button icon-button" href="#/settings" aria-label="Settings" title="Settings">
+          <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="currentColor">
+            <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.488.488 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/>
+          </svg>
+        </a>
+        <a class="button primary" href="#/jobs/new">Create Job</a>
+      </div>
     </div>
     <p id="no-jobs" class="muted" hidden>No jobs yet. Create one to get started.</p>
     <ul id="job-list" class="job-list" hidden></ul>
+  </section>
 
-    <section class="printer">
-      <h2>Printer</h2>
-      <label for="printerName">Printer</label>
-      <div class="row">
-        <select id="printerName"></select>
-        <button id="refresh-printers" type="button">Refresh</button>
-      </div>
-      <button id="print-test" type="button">Print Test</button>
-      <p id="print-status"></p>
-    </section>
+  <!-- Settings -->
+  <section id="view-settings" class="view" hidden>
+    <a class="back" href="#/jobs">← Jobs</a>
+    <h1>Settings</h1>
+    <h2>Printer</h2>
+    <label for="printerName">Printer</label>
+    <div class="row">
+      <select id="printerName"></select>
+      <button id="refresh-printers" type="button">Refresh</button>
+    </div>
+    <button id="print-test" type="button">Print Test</button>
+    <p id="print-status"></p>
   </section>
 
   <!-- Create Job / Edit Job -->
   <section id="view-form" class="view" hidden>
     <a class="back" href="#/jobs">← Jobs</a>
     <h1 id="form-title">Create Job</h1>
-    <p id="error" class="error" hidden></p>
     <form id="job-form">
       <label for="name">Job name</label>
       <input id="name" name="name" type="text" required>
@@ -51,6 +60,7 @@
 
       <div id="structure" class="structure" hidden>
         <h2>Departments &amp; Divisions</h2>
+        <label class="checkbox"><input id="add-hod" type="checkbox"> Add HOD/DLCPO as a division?</label>
         <p id="structure-empty" class="muted" hidden>No departments yet.</p>
         <table id="structure-table" class="structure-table">
           <thead><tr><th>Department</th><th>Divisions</th><th></th></tr></thead>
@@ -59,6 +69,7 @@
         <button id="add-department" type="button">+ Add Department</button>
       </div>
 
+      <p id="error" class="error form-error" hidden></p>
       <div class="actions">
         <button id="form-submit" class="primary" type="submit">Create Job</button>
         <a id="form-cancel" class="button" href="#/jobs">Cancel</a>

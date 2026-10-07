@@ -2,6 +2,7 @@ const views = {
   list: document.getElementById('view-list'),
   form: document.getElementById('view-form'),
   job: document.getElementById('view-job'),
+  settings: document.getElementById('view-settings'),
 };
 
 const jobList = document.getElementById('job-list');
@@ -19,6 +20,7 @@ const structureTable = document.getElementById('structure-table');
 const structureRows = document.getElementById('structure-rows');
 const structureEmpty = document.getElementById('structure-empty');
 const addDepartmentButton = document.getElementById('add-department');
+const hodCheckbox = document.getElementById('add-hod');
 
 const printerSelect = document.getElementById('printerName');
 const refreshButton = document.getElementById('refresh-printers');
@@ -52,12 +54,30 @@ function linkButton(text, href, className = 'button') {
 
 // --- Departments and divisions editor ---
 
+const HOD = 'HOD/DLCPO';
+const isHod = (div) => div.name.trim().toLowerCase() === HOD.toLowerCase();
+
+// Adds HOD/DLCPO to the end of every department that has at least one other division.
+function addHod(departments) {
+  for (const dept of departments) {
+    if (dept.divisions.some((d) => !isHod(d)) && !dept.divisions.some(isHod)) {
+      dept.divisions.push({ id: null, name: HOD });
+    }
+  }
+}
+
+function removeHod(departments) {
+  for (const dept of departments) dept.divisions = dept.divisions.filter((d) => !isHod(d));
+}
+
 function templateFor(commandType) {
-  return (commandStructures[commandType] || []).map((dept) => ({
+  const departments = (commandStructures[commandType] || []).map((dept) => ({
     id: null,
     name: dept.name,
     divisions: dept.divisions.map((name) => ({ id: null, name })),
   }));
+  if (hodCheckbox.checked) addHod(departments);
+  return departments;
 }
 
 function sameNames(a, b) {
@@ -111,7 +131,10 @@ function renderStructure() {
     }
     divisions.append(smallButton('+ Division', `Add a division to ${dept.name}`, () => {
       const div = { id: null, name: '' };
-      dept.divisions.push(div);
+      // Keep HOD/DLCPO at the end of the list.
+      const last = dept.divisions.length - 1;
+      if (last >= 0 && isHod(dept.divisions[last])) dept.divisions.splice(last, 0, div);
+      else dept.divisions.push(div);
       pendingFocus = div;
       renderStructure();
     }));
@@ -141,8 +164,15 @@ function loadStructure(departments, commandType) {
     divisions: dept.divisions.map((div) => ({ id: div.id, name: div.name })),
   }));
   shownCommandType = commandType;
+  hodCheckbox.checked = structure.some((dept) => dept.divisions.some(isHod));
   renderStructure();
 }
+
+hodCheckbox.addEventListener('change', () => {
+  if (hodCheckbox.checked) addHod(structure);
+  else removeHod(structure);
+  renderStructure();
+});
 
 commandTypeSelect.addEventListener('change', () => {
   const newType = commandTypeSelect.value;
@@ -252,10 +282,17 @@ async function showJob(id) {
   show('job');
 }
 
-// #/jobs, #/jobs/new, #/jobs/:id, #/jobs/:id/edit
+async function showSettings() {
+  printStatus.textContent = '';
+  show('settings');
+  await loadPrinters();
+}
+
+// #/jobs, #/jobs/new, #/jobs/:id, #/jobs/:id/edit, #/settings
 async function route() {
   const hash = location.hash;
   let match;
+  if (hash === '#/settings') return showSettings();
   if (hash === '#/jobs/new') return showForm(null);
   if ((match = hash.match(/^#\/jobs\/(\d+)\/edit$/))) return showForm(Number(match[1]));
   if ((match = hash.match(/^#\/jobs\/(\d+)$/))) return showJob(Number(match[1]));
@@ -286,7 +323,10 @@ form.addEventListener('submit', async (event) => {
     ? await window.api.createJob(job)
     : await window.api.updateJob(editingId, job);
   showError(error);
-  if (error) return;
+  if (error) {
+    errorEl.scrollIntoView({ block: 'nearest' });
+    return;
+  }
   location.hash = editingId === null ? '#/jobs' : `#/jobs/${editingId}`;
 });
 
@@ -297,10 +337,7 @@ async function loadPrinters() {
     window.api.listPrinters(),
     window.api.getPrinterName(),
   ]);
-  const options = printers.map((p) => new Option(
-    p.displayName === p.name ? p.name : `${p.displayName} (${p.name})`,
-    p.name,
-  ));
+  const options = printers.map((p) => new Option(p.displayName, p.name));
   const installed = printers.some((p) => p.name === current.name);
   if (current.saved && !installed) {
     options.push(new Option(`${current.name} (not found)`, current.name));
@@ -340,6 +377,5 @@ printButton.addEventListener('click', async () => {
   for (const type of info.commandTypes) {
     commandTypeSelect.add(new Option(type, type));
   }
-  await loadPrinters();
   await route();
 })();
