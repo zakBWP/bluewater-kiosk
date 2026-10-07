@@ -77,25 +77,80 @@
     </form>
   </section>
 
-  <!-- Job details -->
-  <section id="view-job" class="view" hidden>
+  <!-- Data entry for an opened job -->
+  <section id="view-entry" class="view" hidden>
     <a class="back" href="#/jobs">← Jobs</a>
-    <h1 id="job-name"></h1>
-    <dl class="details">
-      <dt>Command Type</dt><dd id="job-commandType"></dd>
-      <dt>Year</dt><dd id="job-year"></dd>
-      <dt>Number of parts</dt><dd id="job-parts"></dd>
-      <dt>Created</dt><dd id="job-created"></dd>
-    </dl>
-    <h2>Departments &amp; Divisions</h2>
-    <p id="job-structure-empty" class="muted" hidden>No departments.</p>
-    <table id="job-structure" class="structure-table">
-      <thead><tr><th>Department</th><th>Divisions</th></tr></thead>
-      <tbody id="job-structure-rows"></tbody>
-    </table>
-    <div class="actions">
-      <a id="job-edit" class="button" href="#/jobs">Edit</a>
+    <h1 id="entry-job-name"></h1>
+    <p id="entry-job-info" class="muted"></p>
+
+    <div id="entry-status" class="status" hidden>
+      <p id="entry-status-text"></p>
+      <button id="entry-reprint" type="button" hidden>Reprint</button>
     </div>
+
+    <form id="entry-form">
+      <label for="entry-department">Department</label>
+      <select id="entry-department" name="department" required></select>
+
+      <div id="entry-division-field" hidden>
+        <label for="entry-division">Division</label>
+        <select id="entry-division" name="division"></select>
+      </div>
+
+      <div class="columns">
+        <div>
+          <label for="entry-firstName">First name</label>
+          <input id="entry-firstName" name="firstName" type="text" autocomplete="off" required>
+        </div>
+        <div>
+          <label for="entry-lastName">Last name</label>
+          <input id="entry-lastName" name="lastName" type="text" autocomplete="off" required>
+        </div>
+      </div>
+
+      <div class="columns">
+        <div>
+          <label id="entry-rateRank-label" for="entry-rateRank">Rate/Rank</label>
+          <input id="entry-rateRank" name="rateRank" type="text" autocomplete="off" required>
+        </div>
+        <div>
+          <label for="entry-payGrade">Pay grade</label>
+          <select id="entry-payGrade" name="payGrade" required>
+            <option value="" selected disabled>Select pay grade</option>
+          </select>
+        </div>
+      </div>
+
+      <label for="entry-street">Street address</label>
+      <input id="entry-street" name="street" type="text" autocomplete="off">
+
+      <div class="columns address">
+        <div>
+          <label for="entry-city">City</label>
+          <input id="entry-city" name="city" type="text" autocomplete="off">
+        </div>
+        <div>
+          <label for="entry-state">State</label>
+          <input id="entry-state" name="state" type="text" autocomplete="off">
+        </div>
+        <div>
+          <label for="entry-zip">ZIP</label>
+          <input id="entry-zip" name="zip" type="text" inputmode="numeric" autocomplete="off"
+                 pattern="\d{5}(-\d{4})?" title="5 digits, or 5+4 like 12345-6789">
+        </div>
+      </div>
+
+      <label for="entry-primaryEmail">Primary email</label>
+      <input id="entry-primaryEmail" name="primaryEmail" type="email" autocomplete="off">
+
+      <label for="entry-secondaryEmail">Secondary email</label>
+      <input id="entry-secondaryEmail" name="secondaryEmail" type="email" autocomplete="off">
+
+      <p id="entry-error" class="error form-error" hidden></p>
+      <div class="actions">
+        <button id="entry-submit" class="primary" type="submit">Submit</button>
+      </div>
+    </form>
   </section>
 
   <script type="module" src="renderer.js"></script>

@@ -1,7 +1,7 @@
 const views = {
   list: document.getElementById('view-list'),
   form: document.getElementById('view-form'),
-  job: document.getElementById('view-job'),
+  entry: document.getElementById('view-entry'),
   settings: document.getElementById('view-settings'),
 };
 
@@ -22,6 +22,20 @@ const structureEmpty = document.getElementById('structure-empty');
 const addDepartmentButton = document.getElementById('add-department');
 const hodCheckbox = document.getElementById('add-hod');
 
+const entryForm = document.getElementById('entry-form');
+const entryJobName = document.getElementById('entry-job-name');
+const entryJobInfo = document.getElementById('entry-job-info');
+const entryDepartment = document.getElementById('entry-department');
+const entryDivisionField = document.getElementById('entry-division-field');
+const entryDivision = document.getElementById('entry-division');
+const entryRateLabel = document.getElementById('entry-rateRank-label');
+const entryPayGrade = document.getElementById('entry-payGrade');
+const entryError = document.getElementById('entry-error');
+const entrySubmit = document.getElementById('entry-submit');
+const entryStatus = document.getElementById('entry-status');
+const entryStatusText = document.getElementById('entry-status-text');
+const entryReprint = document.getElementById('entry-reprint');
+
 const printerSelect = document.getElementById('printerName');
 const refreshButton = document.getElementById('refresh-printers');
 const printButton = document.getElementById('print-test');
@@ -33,6 +47,8 @@ let commandStructures = {}; // default departments and divisions per command typ
 let structure = []; // the departments being edited: [{ id, name, divisions: [{ id, name }] }]
 let shownCommandType = ''; // the command type whose departments are in the editor
 let pendingFocus = null; // a department or division whose input should get focus after rendering
+let entryJob = null; // the job open on the entry screen
+let lastEntryUuid = null; // the most recent entry, for reprinting its ticket
 
 function show(name) {
   for (const [key, el] of Object.entries(views)) el.hidden = key !== name;
@@ -242,7 +258,7 @@ async function showForm(id) {
     editingId = id;
     formTitle.textContent = 'Edit Job';
     formSubmit.textContent = 'Save Changes';
-    formCancel.href = `#/jobs/${id}`;
+    formCancel.href = '#/jobs';
     fields.name.value = job.name;
     fields.commandType.value = job.commandType;
     fields.year.value = job.year;
@@ -253,34 +269,113 @@ async function showForm(id) {
   fields.name.focus();
 }
 
-async function showJob(id) {
+// --- Data entry ---
+
+// Selected by default, so resetting the form goes back to it rather than the first real option.
+function placeholderOption(text) {
+  const option = new Option(text, '', true, true);
+  option.disabled = true;
+  return option;
+}
+
+function updateDivisions() {
+  const dept = entryJob.departments.find((d) => d.name === entryDepartment.value);
+  const divisions = dept ? dept.divisions : [];
+  entryDivision.replaceChildren(
+    placeholderOption('Select division'),
+    ...divisions.map((d) => new Option(d.name, d.name)),
+  );
+  entryDivisionField.hidden = divisions.length === 0;
+  entryDivision.required = divisions.length > 0;
+}
+
+async function updateEntryCount() {
+  const count = await window.api.countEntries(entryJob.id);
+  entryJobInfo.textContent =
+    `${entryJob.commandType} · ${entryJob.year} · ${count} entr${count === 1 ? 'y' : 'ies'} on this kiosk`;
+}
+
+function showEntryError(message) {
+  entryError.textContent = message || '';
+  entryError.hidden = !message;
+}
+
+function showEntryStatus(message, { error = false, reprint = false } = {}) {
+  entryStatusText.textContent = message;
+  entryStatus.classList.toggle('error', error);
+  entryReprint.hidden = !reprint;
+  entryStatus.hidden = false;
+}
+
+async function showEntryForm(id) {
   const job = await window.api.getJob(id);
   if (!job) {
     location.hash = '#/jobs';
     return;
   }
-  document.getElementById('job-name').textContent = job.name;
-  document.getElementById('job-commandType').textContent = job.commandType;
-  document.getElementById('job-year').textContent = job.year;
-  document.getElementById('job-parts').textContent = job.parts;
-  // created_at is stored in UTC by SQLite.
-  document.getElementById('job-created').textContent =
-    new Date(job.createdAt.replace(' ', 'T') + 'Z').toLocaleString();
-  const rows = job.departments.map((dept) => {
-    const tr = document.createElement('tr');
-    const name = document.createElement('td');
-    name.textContent = dept.name;
-    const divisions = document.createElement('td');
-    divisions.textContent = dept.divisions.map((d) => d.name).join(', ') || '—';
-    tr.append(name, divisions);
-    return tr;
-  });
-  document.getElementById('job-structure-rows').replaceChildren(...rows);
-  document.getElementById('job-structure').hidden = rows.length === 0;
-  document.getElementById('job-structure-empty').hidden = rows.length > 0;
-  document.getElementById('job-edit').href = `#/jobs/${id}/edit`;
-  show('job');
+  entryJob = job;
+  lastEntryUuid = null;
+  entryForm.reset();
+  showEntryError(null);
+  entryStatus.hidden = true;
+  entryJobName.textContent = job.name;
+  entryRateLabel.textContent = await window.api.rateLabel(job.commandType);
+  entryDepartment.replaceChildren(
+    placeholderOption('Select department'),
+    ...job.departments.map((d) => new Option(d.name, d.name)),
+  );
+  updateDivisions();
+  await updateEntryCount();
+  show('entry');
+  entryDepartment.focus();
 }
+
+entryDepartment.addEventListener('change', updateDivisions);
+
+entryForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  if (entrySubmit.disabled) return; // already submitting: don't save twice
+  entrySubmit.disabled = true;
+  entrySubmit.textContent = 'Submitting…';
+  const { error, entry, printError } = await window.api.createEntry(
+    entryJob.id,
+    Object.fromEntries(new FormData(entryForm)),
+  );
+  entrySubmit.disabled = false;
+  entrySubmit.textContent = 'Submit';
+
+  if (error) {
+    showEntryError(error);
+    entryError.scrollIntoView({ block: 'nearest' });
+    return;
+  }
+
+  // Saved: clear the form for the next person.
+  showEntryError(null);
+  entryForm.reset();
+  updateDivisions();
+  await updateEntryCount();
+  lastEntryUuid = entry.uuid;
+  const name = `${entry.firstName} ${entry.lastName}`;
+  if (printError) {
+    showEntryStatus(`Saved ${name}'s information, but the ticket didn't print: ${printError}`, { error: true, reprint: true });
+  } else {
+    showEntryStatus(`Saved and printed a ticket for ${name}.`);
+  }
+  window.scrollTo(0, 0);
+  entryDepartment.focus();
+});
+
+entryReprint.addEventListener('click', async () => {
+  entryReprint.disabled = true;
+  const { printError } = await window.api.reprintEntry(lastEntryUuid);
+  entryReprint.disabled = false;
+  if (printError) {
+    showEntryStatus(`The ticket still didn't print: ${printError}`, { error: true, reprint: true });
+  } else {
+    showEntryStatus('Ticket printed.');
+  }
+});
 
 async function showSettings() {
   printStatus.textContent = '';
@@ -295,7 +390,7 @@ async function route() {
   if (hash === '#/settings') return showSettings();
   if (hash === '#/jobs/new') return showForm(null);
   if ((match = hash.match(/^#\/jobs\/(\d+)\/edit$/))) return showForm(Number(match[1]));
-  if ((match = hash.match(/^#\/jobs\/(\d+)$/))) return showJob(Number(match[1]));
+  if ((match = hash.match(/^#\/jobs\/(\d+)$/))) return showEntryForm(Number(match[1]));
   if (hash !== '#/jobs') {
     location.hash = '#/jobs'; // triggers route() again via hashchange
     return;
@@ -327,7 +422,7 @@ form.addEventListener('submit', async (event) => {
     errorEl.scrollIntoView({ block: 'nearest' });
     return;
   }
-  location.hash = editingId === null ? '#/jobs' : `#/jobs/${editingId}`;
+  location.hash = '#/jobs';
 });
 
 // --- Printer ---
@@ -376,6 +471,9 @@ printButton.addEventListener('click', async () => {
   commandStructures = info.commandStructures;
   for (const type of info.commandTypes) {
     commandTypeSelect.add(new Option(type, type));
+  }
+  for (const grade of info.payGrades) {
+    entryPayGrade.add(new Option(grade, grade));
   }
   await route();
 })();

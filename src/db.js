@@ -1,5 +1,47 @@
+import { randomUUID } from 'node:crypto';
 import Database from 'better-sqlite3';
 import { COMMAND_TYPES } from './command-types.js';
+import { PAY_GRADES, rateLabelFor } from './entry-options.js';
+
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const ZIP_PATTERN = /^\d{5}(-\d{4})?$/;
+
+// Returns { error } or { entry } with trimmed fields. The department and division are checked
+// against the job's own list, then stored by name.
+function validateEntry(job, input) {
+  const text = (key) => String(input[key] ?? '').trim();
+  const entry = {
+    department: text('department'),
+    division: text('division'),
+    firstName: text('firstName'),
+    lastName: text('lastName'),
+    rateRank: text('rateRank'),
+    payGrade: text('payGrade'),
+    street: text('street'),
+    city: text('city'),
+    state: text('state'),
+    zip: text('zip'),
+    primaryEmail: text('primaryEmail'),
+    secondaryEmail: text('secondaryEmail'),
+  };
+
+  const dept = job.departments.find((d) => d.name === entry.department);
+  if (!dept) return { error: 'Please select a department.' };
+  if (dept.divisions.length > 0) {
+    if (!dept.divisions.some((d) => d.name === entry.division)) return { error: 'Please select a division.' };
+  } else {
+    entry.division = '';
+  }
+  if (!entry.firstName) return { error: 'First name is required.' };
+  if (!entry.lastName) return { error: 'Last name is required.' };
+  if (!entry.rateRank) return { error: `${rateLabelFor(job.commandType)} is required.` };
+  if (!PAY_GRADES.includes(entry.payGrade)) return { error: 'Please select a pay grade.' };
+  if (entry.zip && !ZIP_PATTERN.test(entry.zip)) return { error: 'ZIP code must be 5 digits, or 5+4 like 12345-6789.' };
+  if (entry.primaryEmail && !EMAIL_PATTERN.test(entry.primaryEmail)) return { error: 'Primary email doesn\'t look like an email address.' };
+  if (entry.secondaryEmail && !EMAIL_PATTERN.test(entry.secondaryEmail)) return { error: 'Secondary email doesn\'t look like an email address.' };
+
+  return { entry };
+}
 
 function optionalId(value) {
   const id = Number(value);
@@ -84,6 +126,28 @@ export function openDatabase(file) {
     );
     CREATE INDEX IF NOT EXISTS departments_job ON departments(job_id);
     CREATE INDEX IF NOT EXISTS divisions_department ON divisions(department_id);
+    -- People's information entered at the kiosk. Department and division are stored by name,
+    -- so later edits to a job's departments don't change past entries. A job that has entries
+    -- can't be deleted (no ON DELETE CASCADE), so entries can't disappear with it.
+    CREATE TABLE IF NOT EXISTS entries (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      uuid TEXT NOT NULL UNIQUE,
+      job_id INTEGER NOT NULL REFERENCES jobs(id),
+      department TEXT NOT NULL,
+      division TEXT NOT NULL DEFAULT '',
+      first_name TEXT NOT NULL,
+      last_name TEXT NOT NULL,
+      rate_rank TEXT NOT NULL,
+      pay_grade TEXT NOT NULL,
+      street TEXT NOT NULL DEFAULT '',
+      city TEXT NOT NULL DEFAULT '',
+      state TEXT NOT NULL DEFAULT '',
+      zip TEXT NOT NULL DEFAULT '',
+      primary_email TEXT NOT NULL DEFAULT '',
+      secondary_email TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS entries_job ON entries(job_id);
     CREATE TABLE IF NOT EXISTS settings (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
@@ -124,6 +188,20 @@ export function openDatabase(file) {
   const insertDivision = db.prepare('INSERT INTO divisions (department_id, name, position) VALUES (?, ?, ?)');
   const updateDivision = db.prepare('UPDATE divisions SET name = ?, position = ? WHERE id = ?');
   const deleteDivision = db.prepare('DELETE FROM divisions WHERE id = ?');
+
+  const insertEntry = db.prepare(`
+    INSERT INTO entries (uuid, job_id, department, division, first_name, last_name, rate_rank, pay_grade,
+                         street, city, state, zip, primary_email, secondary_email)
+    VALUES (@uuid, @jobId, @department, @division, @firstName, @lastName, @rateRank, @payGrade,
+            @street, @city, @state, @zip, @primaryEmail, @secondaryEmail)
+  `);
+  const getEntry = db.prepare(`
+    SELECT uuid, job_id AS jobId, department, division, first_name AS firstName, last_name AS lastName,
+           rate_rank AS rateRank, pay_grade AS payGrade, street, city, state, zip,
+           primary_email AS primaryEmail, secondary_email AS secondaryEmail, created_at AS createdAt
+    FROM entries WHERE uuid = ?
+  `);
+  const countEntries = db.prepare('SELECT count(*) AS n FROM entries WHERE job_id = ?');
 
   const getSetting = db.prepare('SELECT value FROM settings WHERE key = ?');
   const putSetting = db.prepare(
@@ -206,6 +284,20 @@ export function openDatabase(file) {
       if (duplicate) return duplicate;
       return updateJobTx(Number(id), job) ? null : 'Job not found.';
     },
+
+    // Returns { error } or { entry } once it's saved.
+    createEntry(jobId, input) {
+      const job = this.getJob(jobId);
+      if (!job) return { error: 'Job not found.' };
+      const { error, entry } = validateEntry(job, input);
+      if (error) return { error };
+      const uuid = randomUUID();
+      insertEntry.run({ uuid, jobId: job.id, ...entry });
+      return { entry: getEntry.get(uuid) };
+    },
+
+    getEntry: (uuid) => getEntry.get(String(uuid)) || null,
+    countEntries: (jobId) => countEntries.get(Number(jobId)).n,
 
     getSetting(key, fallback) {
       const row = getSetting.get(key);

@@ -81,12 +81,72 @@ function rawInterface(printerName) {
   };
 }
 
-export async function printTestReceipt(printerName) {
-  const printer = new ThermalPrinter({
+function createPrinter(printerName) {
+  return new ThermalPrinter({
     type: PrinterTypes.EPSON,
-    interface: rawInterface(printerName),
+    interface: printerName ? rawInterface(printerName) : undefined,
     width: 32, // characters per line on 58 mm paper (TM-m10, font A)
   });
+}
+
+// SQLite stores datetime('now') in UTC as "YYYY-MM-DD HH:MM:SS".
+function localTime(sqliteUtc) {
+  return new Date(sqliteUtc.replace(' ', 'T') + 'Z').toLocaleString();
+}
+
+// Adds the ticket for one entry to the printer's buffer. Empty optional fields are left out.
+export function buildEntryTicket(printer, { job, entry, rateLabel }) {
+  const field = (label, value) => {
+    if (!value) return;
+    printer.bold(true);
+    printer.println(label);
+    printer.bold(false);
+    printer.println(value);
+  };
+
+  printer.alignCenter();
+  printer.bold(true);
+  printer.setTextDoubleHeight();
+  printer.println(job.name);
+  printer.setTextNormal();
+  printer.bold(false);
+  printer.println(`${job.commandType} - ${job.year}`);
+  printer.println(localTime(entry.createdAt));
+  printer.alignLeft();
+  printer.drawLine();
+
+  field('Name', `${entry.firstName} ${entry.lastName}`);
+  field(rateLabel, entry.rateRank);
+  field('Pay grade', entry.payGrade);
+  field('Department', entry.department);
+  field('Division', entry.division);
+  printer.drawLine();
+
+  const cityLine = [entry.city, [entry.state, entry.zip].filter(Boolean).join(' ')].filter(Boolean).join(', ');
+  if (entry.street || cityLine) {
+    printer.bold(true);
+    printer.println('Address');
+    printer.bold(false);
+    if (entry.street) printer.println(entry.street);
+    if (cityLine) printer.println(cityLine);
+  }
+  field('Primary email', entry.primaryEmail);
+  field('Secondary email', entry.secondaryEmail);
+  if (entry.street || cityLine || entry.primaryEmail || entry.secondaryEmail) printer.drawLine();
+
+  printer.alignCenter();
+  printer.println(`Entry ${entry.uuid.slice(0, 8).toUpperCase()}`);
+  printer.cut();
+}
+
+export async function printEntryTicket(printerName, ticket) {
+  const printer = createPrinter(printerName);
+  buildEntryTicket(printer, ticket);
+  return printer.execute();
+}
+
+export async function printTestReceipt(printerName) {
+  const printer = createPrinter(printerName);
 
   const now = new Date();
   printer.alignCenter();
