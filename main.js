@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import { app, BrowserWindow, ipcMain } from 'electron';
 import { openDatabase } from './src/db.js';
 import { COMMAND_TYPES, COMMAND_STRUCTURES } from './src/command-types.js';
@@ -9,6 +10,18 @@ let db;
 
 const PAPER_LOW = 'The printer paper is running low. Load a new roll soon.';
 const UNPRINTED = 'unprintedEntry'; // setting: uuid of the entry whose ticket failed to print
+const PASSWORD = 'kioskPassword'; // setting: "salt:hash" (hex) of the password for leaving the form
+
+function hashPassword(password, salt) {
+  return scryptSync(String(password), salt, 32);
+}
+
+function checkPassword(password) {
+  const stored = db.getSetting(PASSWORD, '');
+  if (!stored) return true;
+  const [salt, hash] = stored.split(':');
+  return timingSafeEqual(hashPassword(password, Buffer.from(salt, 'hex')), Buffer.from(hash, 'hex'));
+}
 
 // The entry whose ticket failed to print, or null. The form stays locked until it prints, so
 // the next person can't take the printer while someone is still owed a ticket.
@@ -77,6 +90,14 @@ app.whenReady().then(() => {
   });
   ipcMain.handle('entries:unprinted', () => unprintedEntry());
   ipcMain.handle('entries:count', (event, jobId) => db.countEntries(jobId));
+  ipcMain.handle('password:isSet', () => db.getSetting(PASSWORD, '') !== '');
+  ipcMain.handle('password:check', (event, password) => checkPassword(password));
+  // A blank password removes it.
+  ipcMain.handle('password:set', (event, password) => {
+    if (!password) return db.setSetting(PASSWORD, '');
+    const salt = randomBytes(16);
+    db.setSetting(PASSWORD, `${salt.toString('hex')}:${hashPassword(password, salt).toString('hex')}`);
+  });
   ipcMain.handle('printer:list', async (event) => {
     const printers = await event.sender.getPrintersAsync();
     return printers

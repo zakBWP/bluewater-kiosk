@@ -37,6 +37,15 @@
     </div>
     <button id="print-test" type="button">Print Test</button>
     <p id="print-status"></p>
+
+    <h2>Kiosk password</h2>
+    <p class="muted">Needed to leave the entry form with ← Jobs. Leave blank and save to remove it.</p>
+    <form id="password-form">
+      <label for="new-password">New password</label>
+      <input id="new-password" type="password" autocomplete="new-password">
+      <button type="submit">Save Password</button>
+      <p id="password-status"></p>
+    </form>
   </section>
 
   <!-- Create Job / Edit Job -->
@@ -79,8 +88,7 @@
 
   <!-- Data entry for an opened job -->
   <section id="view-entry" class="view" hidden>
-    <a class="back" href="#/jobs">← Jobs</a>
-    <h1 id="entry-job-name"></h1>
+    <a id="entry-back" class="back" href="#/jobs">← Jobs</a>
     <p id="entry-job-info" class="muted"></p>
 
     <form id="entry-form">
@@ -159,6 +167,19 @@
       </div>
     </form>
   </section>
+
+  <!-- Asks for the kiosk password before leaving the entry form -->
+  <dialog id="unlock-dialog">
+    <form id="unlock-form">
+      <label for="unlock-password">Enter the kiosk password</label>
+      <input id="unlock-password" type="password" autocomplete="off" required>
+      <p id="unlock-error" class="error" hidden>Incorrect password.</p>
+      <div class="actions">
+        <button class="primary" type="submit">Unlock</button>
+        <button id="unlock-cancel" type="button">Cancel</button>
+      </div>
+    </form>
+  </dialog>
 
   <script type="module" src="renderer.js"></script>
 </body>

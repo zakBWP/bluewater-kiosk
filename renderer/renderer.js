@@ -23,7 +23,6 @@ const addDepartmentButton = document.getElementById('add-department');
 const hodCheckbox = document.getElementById('add-hod');
 
 const entryForm = document.getElementById('entry-form');
-const entryJobName = document.getElementById('entry-job-name');
 const entryJobInfo = document.getElementById('entry-job-info');
 const entryDepartment = document.getElementById('entry-department');
 const entryDivisionField = document.getElementById('entry-division-field');
@@ -36,6 +35,17 @@ const entrySuccess = document.getElementById('entry-success');
 const entryStatus = document.getElementById('entry-status');
 const entryStatusText = document.getElementById('entry-status-text');
 const entryReprint = document.getElementById('entry-reprint');
+
+const entryBack = document.getElementById('entry-back');
+const unlockDialog = document.getElementById('unlock-dialog');
+const unlockForm = document.getElementById('unlock-form');
+const unlockPassword = document.getElementById('unlock-password');
+const unlockError = document.getElementById('unlock-error');
+const unlockCancel = document.getElementById('unlock-cancel');
+
+const passwordForm = document.getElementById('password-form');
+const newPassword = document.getElementById('new-password');
+const passwordStatus = document.getElementById('password-status');
 
 const printerSelect = document.getElementById('printerName');
 const refreshButton = document.getElementById('refresh-printers');
@@ -294,7 +304,7 @@ function updateDivisions() {
 async function updateEntryCount() {
   const count = await window.api.countEntries(entryJob.id);
   entryJobInfo.textContent =
-    `${entryJob.commandType} · ${entryJob.year} · ${count} entr${count === 1 ? 'y' : 'ies'} on this kiosk`;
+    `${entryJob.name} (${entryJob.year}) | ${count} code${count === 1 ? '' : 's'} used`;
 }
 
 function showEntryError(message) {
@@ -363,7 +373,6 @@ async function showEntryForm(id) {
   showEntryError(null);
   hideSuccess();
   entryStatus.hidden = true;
-  entryJobName.textContent = job.name;
   entryRateLabel.textContent = await window.api.rateLabel(job.commandType);
   entryDepartment.replaceChildren(
     placeholderOption('Select department'),
@@ -424,8 +433,44 @@ entryReprint.addEventListener('click', async () => {
   }
 });
 
+// --- Kiosk password ---
+
+// Leaving the entry form needs the kiosk password, if one is set in Settings.
+entryBack.addEventListener('click', async (event) => {
+  event.preventDefault();
+  if (!(await window.api.isPasswordSet())) {
+    location.hash = '#/jobs';
+    return;
+  }
+  unlockForm.reset();
+  unlockError.hidden = true;
+  unlockDialog.showModal();
+});
+
+unlockForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  if (await window.api.checkPassword(unlockPassword.value)) {
+    unlockDialog.close();
+    location.hash = '#/jobs';
+  } else {
+    unlockError.hidden = false;
+    unlockPassword.select();
+  }
+});
+
+unlockCancel.addEventListener('click', () => unlockDialog.close());
+
+passwordForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  await window.api.setPassword(newPassword.value);
+  passwordStatus.textContent = newPassword.value ? 'Password saved.' : 'Password removed.';
+  passwordForm.reset();
+});
+
 async function showSettings() {
   printStatus.textContent = '';
+  passwordStatus.textContent = '';
+  passwordForm.reset();
   show('settings');
   await loadPrinters();
 }
