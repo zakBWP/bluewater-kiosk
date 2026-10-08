@@ -83,11 +83,6 @@
     <h1 id="entry-job-name"></h1>
     <p id="entry-job-info" class="muted"></p>
 
-    <div id="entry-status" class="status" hidden>
-      <p id="entry-status-text"></p>
-      <button id="entry-reprint" type="button" hidden>Reprint</button>
-    </div>
-
     <form id="entry-form">
       <label for="entry-department">Department</label>
       <select id="entry-department" name="department" required></select>
@@ -111,7 +106,8 @@
       <div class="columns">
         <div>
           <label id="entry-rateRank-label" for="entry-rateRank">Rate/Rank</label>
-          <input id="entry-rateRank" name="rateRank" type="text" autocomplete="off" required>
+          <input id="entry-rateRank" name="rateRank" type="text" autocomplete="off" required
+                 placeholder="e.g., &quot;AO3&quot;, &quot;LTJG&quot;">
         </div>
         <div>
           <label for="entry-payGrade">Pay grade</label>
@@ -120,6 +116,8 @@
           </select>
         </div>
       </div>
+
+      <p class="form-note">Enter a home address (non-FPO) for your portrait proof to be sent to. Do not leave blank.</p>
 
       <label for="entry-street">Street address</label>
       <input id="entry-street" name="street" type="text" autocomplete="off">
@@ -140,16 +138,24 @@
         </div>
       </div>
 
+      <p class="form-note">An online gallery with your portrait will be available. Please include a personal email and the email of any family members who may want a portrait.</p>
+
       <label for="entry-primaryEmail">Primary email</label>
-      <input id="entry-primaryEmail" name="primaryEmail" type="email" autocomplete="off">
+      <input id="entry-primaryEmail" name="primaryEmail" type="email" autocomplete="off" required>
 
       <label for="entry-secondaryEmail">Secondary email</label>
       <input id="entry-secondaryEmail" name="secondaryEmail" type="email" autocomplete="off">
 
       <p id="entry-error" class="error form-error" hidden></p>
-      <p id="entry-success" class="success-text" role="status" hidden>Success! Please retrieve your ticket from the printer.</p>
       <div class="actions">
-        <button id="entry-submit" class="primary" type="submit">Submit</button>
+        <button id="entry-submit" class="primary submit-wide" type="submit">Submit</button>
+      </div>
+
+      <!-- Print results: success, and any printer problem or warning. -->
+      <p id="entry-success" class="success-text" role="status" hidden>Success! Please retrieve your ticket from the printer.</p>
+      <div id="entry-status" class="status" role="status" hidden>
+        <p id="entry-status-text"></p>
+        <button id="entry-reprint" type="button" hidden>Reprint</button>
       </div>
     </form>
   </section>

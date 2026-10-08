@@ -1,9 +1,25 @@
-import { spawn } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
+import { promisify } from 'node:util';
 import thermalPrinter from 'node-thermal-printer';
+import { printUsb } from './usb-printer.js';
 
 const { ThermalPrinter, PrinterTypes } = thermalPrinter;
 
 export const DEFAULT_PRINTER_NAME = process.platform === 'win32' ? 'EPSON TM-m10 Receipt5' : 'EPSON_TM_m10';
+
+// The serial number of a CUPS queue's USB printer, from its device URI
+// (usb://EPSON/TM-m10?serial=...), or null if it isn't connected by USB.
+async function cupsUsbSerial(printerName) {
+  let stdout;
+  try {
+    ({ stdout } = await promisify(execFile)('lpstat', ['-v', printerName]));
+  } catch {
+    throw new Error(`There's no printer called "${printerName}". Choose one in Settings.`);
+  }
+  const uri = stdout.slice(stdout.indexOf(':') + 1).trim();
+  if (!uri.startsWith('usb://')) return null;
+  return new URL(uri).searchParams.get('serial');
+}
 
 // macOS/Linux: hand the bytes to CUPS as a raw job, so the driver passes them through untouched.
 function sendRawCups(printerName, data) {
@@ -70,14 +86,25 @@ async function sendRawWindows(printerName, data) {
   }
 }
 
+// Sends the bytes and resolves with { confirmed, paperLow }. `confirmed` is true when the
+// printer itself reported finishing the ticket; otherwise we only know the print queue took it.
+async function send(printerName, buffer) {
+  if (process.platform === 'win32') {
+    await sendRawWindows(printerName, buffer);
+    return { confirmed: false, paperLow: false };
+  }
+  const serial = await cupsUsbSerial(printerName);
+  if (serial) return { confirmed: true, ...(await printUsb(serial, buffer)) };
+  await sendRawCups(printerName, buffer);
+  return { confirmed: false, paperLow: false };
+}
+
 // Lets node-thermal-printer build the ESC/POS bytes while we choose how they're sent.
 function rawInterface(printerName) {
   return {
     getPrinterName: () => printerName,
     isPrinterConnected: async () => true,
-    execute: (buffer) => (process.platform === 'win32'
-      ? sendRawWindows(printerName, buffer)
-      : sendRawCups(printerName, buffer)),
+    execute: (buffer) => send(printerName, buffer),
   };
 }
 

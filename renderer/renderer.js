@@ -49,7 +49,7 @@ let structure = []; // the departments being edited: [{ id, name, divisions: [{ 
 let shownCommandType = ''; // the command type whose departments are in the editor
 let pendingFocus = null; // a department or division whose input should get focus after rendering
 let entryJob = null; // the job open on the entry screen
-let lastEntryUuid = null; // the most recent entry, for reprinting its ticket
+let lastEntryUuid = null; // the entry whose ticket didn't print, for reprinting it
 let successTimer = null;
 
 function show(name) {
@@ -327,6 +327,28 @@ function showEntryStatus(message, { error = false, reprint = false } = {}) {
   entryStatus.classList.toggle('error', error);
   entryReprint.hidden = !reprint;
   entryStatus.hidden = false;
+  entryStatus.scrollIntoView({ block: 'nearest' });
+}
+
+// Locks the form while someone is still owed a ticket, so the next person can't use it until
+// the printer is fixed and the ticket reprinted. Reprint stays usable.
+function setEntryLocked(locked) {
+  for (const el of entryForm.elements) {
+    if (el !== entryReprint) el.disabled = locked;
+  }
+}
+
+function showUnprinted(entry, printError) {
+  lastEntryUuid = entry.uuid;
+  setEntryLocked(true);
+  showEntryStatus(`ERROR: ${printError || "The last ticket didn't print."}`, { error: true, reprint: true });
+}
+
+// The ticket printed. A warning (such as low paper) stays up for whoever looks after the kiosk.
+function showPrinted(warning) {
+  if (warning) showEntryStatus(warning);
+  else entryStatus.hidden = true;
+  flashSuccess();
 }
 
 async function showEntryForm(id) {
@@ -350,7 +372,10 @@ async function showEntryForm(id) {
   updateDivisions();
   await updateEntryCount();
   show('entry');
-  entryDepartment.focus();
+  const unprinted = await window.api.unprintedEntry();
+  setEntryLocked(Boolean(unprinted));
+  if (unprinted) showUnprinted(unprinted, null);
+  else entryDepartment.focus();
 }
 
 entryDepartment.addEventListener('change', updateDivisions);
@@ -361,7 +386,7 @@ entryForm.addEventListener('submit', async (event) => {
   hideSuccess();
   entrySubmit.disabled = true;
   entrySubmit.textContent = 'Submitting…';
-  const { error, entry, printError } = await window.api.createEntry(
+  const { error, entry, printError, printWarning } = await window.api.createEntry(
     entryJob.id,
     Object.fromEntries(new FormData(entryForm)),
   );
@@ -379,27 +404,23 @@ entryForm.addEventListener('submit', async (event) => {
   entryForm.reset();
   updateDivisions();
   await updateEntryCount();
-  lastEntryUuid = entry.uuid;
   if (printError) {
-    const name = `${entry.firstName} ${entry.lastName}`;
-    showEntryStatus(`Saved ${name}'s information, but the ticket didn't print: ${printError}`, { error: true, reprint: true });
-    window.scrollTo(0, 0);
-    entryDepartment.focus();
+    showUnprinted(entry, printError);
   } else {
-    entryStatus.hidden = true;
-    flashSuccess();
+    showPrinted(printWarning);
   }
 });
 
 entryReprint.addEventListener('click', async () => {
   entryReprint.disabled = true;
-  const { printError } = await window.api.reprintEntry(lastEntryUuid);
+  const { printError, printWarning } = await window.api.reprintEntry(lastEntryUuid);
   entryReprint.disabled = false;
   if (printError) {
-    showEntryStatus(`The ticket still didn't print: ${printError}`, { error: true, reprint: true });
+    showEntryStatus(`ERROR: ${printError}`, { error: true, reprint: true });
   } else {
-    entryStatus.hidden = true;
-    flashSuccess();
+    lastEntryUuid = null;
+    setEntryLocked(false);
+    showPrinted(printWarning);
   }
 });
 

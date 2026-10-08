@@ -37,7 +37,8 @@ function validateEntry(job, input) {
   if (!entry.rateRank) return { error: `${rateLabelFor(job.commandType)} is required.` };
   if (!PAY_GRADES.includes(entry.payGrade)) return { error: 'Please select a pay grade.' };
   if (entry.zip && !ZIP_PATTERN.test(entry.zip)) return { error: 'ZIP code must be 5 digits, or 5+4 like 12345-6789.' };
-  if (entry.primaryEmail && !EMAIL_PATTERN.test(entry.primaryEmail)) return { error: 'Primary email doesn\'t look like an email address.' };
+  if (!entry.primaryEmail) return { error: 'Primary email is required.' };
+  if (!EMAIL_PATTERN.test(entry.primaryEmail)) return { error: 'Primary email doesn\'t look like an email address.' };
   if (entry.secondaryEmail && !EMAIL_PATTERN.test(entry.secondaryEmail)) return { error: 'Secondary email doesn\'t look like an email address.' };
 
   return { entry };

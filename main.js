@@ -7,18 +7,31 @@ import { DEFAULT_PRINTER_NAME, printEntryTicket, printTestReceipt } from './src/
 
 let db;
 
-// Prints an entry's ticket on the chosen printer. Returns null, or an error message.
+const PAPER_LOW = 'The printer paper is running low. Load a new roll soon.';
+const UNPRINTED = 'unprintedEntry'; // setting: uuid of the entry whose ticket failed to print
+
+// The entry whose ticket failed to print, or null. The form stays locked until it prints, so
+// the next person can't take the printer while someone is still owed a ticket.
+function unprintedEntry() {
+  const uuid = db.getSetting(UNPRINTED, '');
+  return uuid ? db.getEntry(uuid) : null;
+}
+
+// Prints an entry's ticket on the chosen printer and records whether it's still owed.
+// Returns { printError, printWarning }.
 async function printTicket(entry) {
   const job = db.getJob(entry.jobId);
   try {
-    await printEntryTicket(db.getSetting('printerName', DEFAULT_PRINTER_NAME), {
+    const { paperLow } = await printEntryTicket(db.getSetting('printerName', DEFAULT_PRINTER_NAME), {
       job,
       entry,
       rateLabel: rateLabelFor(job.commandType),
     });
-    return null;
+    db.setSetting(UNPRINTED, '');
+    return { printError: null, printWarning: paperLow ? PAPER_LOW : null };
   } catch (err) {
-    return err.message;
+    db.setSetting(UNPRINTED, entry.uuid);
+    return { printError: err.message, printWarning: null };
   }
 }
 
@@ -52,15 +65,17 @@ app.whenReady().then(() => {
   ipcMain.handle('jobs:update', (event, id, input) => ({ error: db.updateJob(id, input) }));
   // The entry is saved before printing, so a printer problem never loses data.
   ipcMain.handle('entries:create', async (event, jobId, input) => {
+    if (unprintedEntry()) return { error: "The last ticket hasn't printed yet. Fix the printer and press Reprint." };
     const { error, entry } = db.createEntry(jobId, input);
     if (error) return { error };
-    return { entry, printError: await printTicket(entry) };
+    return { entry, ...(await printTicket(entry)) };
   });
   ipcMain.handle('entries:reprint', async (event, uuid) => {
     const entry = db.getEntry(uuid);
     if (!entry) return { printError: 'Entry not found.' };
-    return { printError: await printTicket(entry) };
+    return printTicket(entry);
   });
+  ipcMain.handle('entries:unprinted', () => unprintedEntry());
   ipcMain.handle('entries:count', (event, jobId) => db.countEntries(jobId));
   ipcMain.handle('printer:list', async (event) => {
     const printers = await event.sender.getPrintersAsync();
@@ -81,7 +96,11 @@ app.whenReady().then(() => {
     if (!name) return { error: 'Enter a printer name.' };
     db.setSetting('printerName', name);
     try {
-      return { message: await printTestReceipt(name) };
+      const { confirmed, paperLow } = await printTestReceipt(name);
+      const message = confirmed
+        ? 'Test receipt printed.'
+        : "Test receipt sent to the print queue. This printer can't confirm that it printed.";
+      return { message: paperLow ? `${message} ${PAPER_LOW}` : message };
     } catch (err) {
       return { error: err.message };
     }

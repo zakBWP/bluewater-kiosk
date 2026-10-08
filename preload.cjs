@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld('api', {
   rateLabel: (commandType) => ipcRenderer.invoke('jobs:rateLabel', commandType),
   createEntry: (jobId, entry) => ipcRenderer.invoke('entries:create', jobId, entry),
   reprintEntry: (uuid) => ipcRenderer.invoke('entries:reprint', uuid),
+  unprintedEntry: () => ipcRenderer.invoke('entries:unprinted'),
   countEntries: (jobId) => ipcRenderer.invoke('entries:count', jobId),
   listPrinters: () => ipcRenderer.invoke('printer:list'),
   getPrinterName: () => ipcRenderer.invoke('printer:getName'),

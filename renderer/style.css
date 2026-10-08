@@ -21,9 +21,10 @@ button:disabled { cursor: default; opacity: 0.6; }
 .error { color: #b00020; }
 .form-error { margin: 24px 0 0; font-weight: 600; }
 .form-error + .actions button, .form-error + .actions .button { margin-top: 12px; }
-.success-text { margin: 24px 0 0; color: #1e7a34; font-size: 0.9rem; font-weight: 600; }
-.success-text + .actions button { margin-top: 12px; }
+.success-text { margin: 16px 0 0; color: #1e7a34; font-size: 0.9rem; font-weight: 600; }
 .muted { color: #666; }
+.form-note { margin: 28px 0 0; color: #444; line-height: 1.4; }
+.submit-wide { flex: 1; padding: 16px 20px; font-size: 1.25rem; font-weight: 600; }
 .job-list { list-style: none; padding: 0; margin: 16px 0 0; }
 .job-list li { display: flex; align-items: center; gap: 6px; padding: 10px 0; border-bottom: 1px solid #ddd; }
 .job-list .job-title { flex: 1; }
