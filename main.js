@@ -1,12 +1,25 @@
 import path from 'node:path';
 import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, Menu } from 'electron';
 import { openDatabase } from './src/db.js';
 import { COMMAND_TYPES, COMMAND_STRUCTURES } from './src/command-types.js';
 import { PAY_GRADES, rateLabelFor } from './src/entry-options.js';
+import { readInternalIdCsv } from './src/internal-ids.js';
 import { DEFAULT_PRINTER_NAME, printEntryTicket, printTestReceipt } from './src/printer.js';
 
 let db;
+
+// `npm run dev` opens an ordinary window with the default menu (Reload, Developer Tools, ...)
+// for working on the app. Otherwise it runs as a full-screen kiosk with no menu.
+const WINDOWED = process.argv.includes('--windowed');
+
+// macOS handles copy, paste and undo in text fields through the Edit menu's shortcuts, so the
+// kiosk keeps an Edit menu; it's never visible in kiosk mode. Leaving out the rest removes
+// Reload, Developer Tools and Quit. Elsewhere those shortcuts work without a menu.
+function kioskMenu() {
+  if (process.platform !== 'darwin') return null;
+  return Menu.buildFromTemplate([{ role: 'appMenu', submenu: [] }, { role: 'editMenu' }]);
+}
 
 const PAPER_LOW = 'The printer paper is running low. Load a new roll soon.';
 const UNPRINTED = 'unprintedEntry'; // setting: uuid of the entry whose ticket failed to print
@@ -35,11 +48,7 @@ function unprintedEntry() {
 async function printTicket(entry) {
   const job = db.getJob(entry.jobId);
   try {
-    const { paperLow } = await printEntryTicket(db.getSetting('printerName', DEFAULT_PRINTER_NAME), {
-      job,
-      entry,
-      rateLabel: rateLabelFor(job.commandType),
-    });
+    const { paperLow } = await printEntryTicket(db.getSetting('printerName', DEFAULT_PRINTER_NAME), { job, entry });
     db.setSetting(UNPRINTED, '');
     return { printError: null, printWarning: paperLow ? PAPER_LOW : null };
   } catch (err) {
@@ -52,6 +61,7 @@ function createWindow() {
   const win = new BrowserWindow({
     width: 900,
     height: 800,
+    kiosk: !WINDOWED,
     webPreferences: {
       preload: path.join(import.meta.dirname, 'preload.cjs'),
       contextIsolation: true,
@@ -64,6 +74,7 @@ function createWindow() {
 
 app.whenReady().then(() => {
   db = openDatabase(process.env.DB_PATH || path.join(app.getPath('userData'), 'jobs.db'));
+  if (!WINDOWED) Menu.setApplicationMenu(kioskMenu());
 
   ipcMain.handle('app:info', () => ({
     commandTypes: COMMAND_TYPES,
@@ -71,11 +82,14 @@ app.whenReady().then(() => {
     payGrades: PAY_GRADES,
     currentYear: new Date().getFullYear(),
   }));
+  ipcMain.handle('app:quit', () => app.quit());
   ipcMain.handle('jobs:rateLabel', (event, commandType) => rateLabelFor(commandType));
   ipcMain.handle('jobs:list', () => db.listJobs());
   ipcMain.handle('jobs:get', (event, id) => db.getJob(id));
   ipcMain.handle('jobs:create', (event, input) => ({ error: db.createJob(input) }));
   ipcMain.handle('jobs:update', (event, id, input) => ({ error: db.updateJob(id, input) }));
+  ipcMain.handle('jobs:delete', (event, id) => db.deleteJob(id));
+  ipcMain.handle('jobs:readIdCsv', (event, text) => readInternalIdCsv(text));
   // The entry is saved before printing, so a printer problem never loses data.
   ipcMain.handle('entries:create', async (event, jobId, input) => {
     if (unprintedEntry()) return { error: "The last ticket hasn't printed yet. Fix the printer and press Reprint." };
@@ -89,7 +103,9 @@ app.whenReady().then(() => {
     return printTicket(entry);
   });
   ipcMain.handle('entries:unprinted', () => unprintedEntry());
-  ipcMain.handle('entries:count', (event, jobId) => db.countEntries(jobId));
+  ipcMain.handle('jobs:listParts', (event, jobId) => db.listParts(jobId));
+  ipcMain.handle('jobs:setKioskPart', (event, jobId, part) => ({ error: db.setKioskPart(jobId, part) }));
+  ipcMain.handle('entries:partUsage', (event, jobId) => db.partUsage(jobId));
   ipcMain.handle('password:isSet', () => db.getSetting(PASSWORD, '') !== '');
   ipcMain.handle('password:check', (event, password) => checkPassword(password));
   // A blank password removes it.

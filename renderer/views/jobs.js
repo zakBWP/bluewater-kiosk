@@ -1,8 +1,18 @@
 // The jobs list: the start screen.
 import { linkButton, show } from '../dom.js';
+import { choosePart } from './part-dialog.js';
 
 const jobList = document.getElementById('job-list');
 const noJobs = document.getElementById('no-jobs');
+
+function openButton(job) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'button primary';
+  button.textContent = 'Open';
+  button.addEventListener('click', () => choosePart(job));
+  return button;
+}
 
 export async function showList() {
   const jobs = await window.api.listJobs();
@@ -13,7 +23,7 @@ export async function showList() {
     title.textContent = `${j.name} (${j.year})`;
     li.append(
       title,
-      linkButton('Open', `#/jobs/${j.id}`, 'button primary'),
+      openButton(j),
       linkButton('Edit', `#/jobs/${j.id}/edit`),
     );
     return li;

@@ -9,7 +9,7 @@ const structureEmpty = document.getElementById('structure-empty');
 const addDepartmentButton = document.getElementById('add-department');
 const hodCheckbox = document.getElementById('add-hod');
 
-let structure = []; // the departments being edited: [{ id, name, divisions: [{ id, name }] }]
+let structure = []; // the departments being edited: [{ name, divisions: [{ name }] }]
 let shownCommandType = ''; // the command type whose departments are in the editor
 let pendingFocus = null; // a department or division whose input should get focus after rendering
 
@@ -20,7 +20,7 @@ const isHod = (div) => div.name.trim().toLowerCase() === HOD.toLowerCase();
 function addHod(departments) {
   for (const dept of departments) {
     if (dept.divisions.some((d) => !isHod(d)) && !dept.divisions.some(isHod)) {
-      dept.divisions.push({ id: null, name: HOD });
+      dept.divisions.push({ name: HOD });
     }
   }
 }
@@ -31,9 +31,8 @@ function removeHod(departments) {
 
 function templateFor(commandType) {
   const departments = (app.commandStructures[commandType] || []).map((dept) => ({
-    id: null,
     name: dept.name,
-    divisions: dept.divisions.map((name) => ({ id: null, name })),
+    divisions: dept.divisions.map((name) => ({ name })),
   }));
   if (hodCheckbox.checked) addHod(departments);
   return departments;
@@ -89,7 +88,7 @@ function renderStructure() {
       divisions.append(chip);
     }
     divisions.append(smallButton('+ Division', `Add a division to ${dept.name}`, () => {
-      const div = { id: null, name: '' };
+      const div = { name: '' };
       // Keep HOD/DLCPO at the end of the list.
       const last = dept.divisions.length - 1;
       if (last >= 0 && isHod(dept.divisions[last])) dept.divisions.splice(last, 0, div);
@@ -118,9 +117,8 @@ function renderStructure() {
 
 export function loadStructure(departments, commandType) {
   structure = departments.map((dept) => ({
-    id: dept.id,
     name: dept.name,
-    divisions: dept.divisions.map((div) => ({ id: div.id, name: div.name })),
+    divisions: dept.divisions.map((div) => ({ name: div.name })),
   }));
   shownCommandType = commandType;
   hodCheckbox.checked = structure.some((dept) => dept.divisions.some(isHod));
@@ -130,9 +128,8 @@ export function loadStructure(departments, commandType) {
 // The departments as they should be saved.
 export function getStructure() {
   return structure.map((dept) => ({
-    id: dept.id,
     name: dept.name,
-    divisions: dept.divisions.map((div) => ({ id: div.id, name: div.name })),
+    divisions: dept.divisions.map((div) => ({ name: div.name })),
   }));
 }
 
@@ -156,7 +153,7 @@ commandTypeSelect.addEventListener('change', () => {
 });
 
 addDepartmentButton.addEventListener('click', () => {
-  const dept = { id: null, name: '', divisions: [] };
+  const dept = { name: '', divisions: [] };
   structure.push(dept);
   pendingFocus = dept;
   renderStructure();

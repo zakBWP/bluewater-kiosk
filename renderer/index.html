@@ -35,17 +35,20 @@
       <select id="printerName"></select>
       <button id="refresh-printers" type="button">Refresh</button>
     </div>
-    <button id="print-test" type="button">Print Test</button>
+    <button id="print-test" type="button">Test Print</button>
     <p id="print-status"></p>
 
     <h2>Kiosk password</h2>
-    <p class="muted">Needed to leave the entry form with ← Jobs. Leave blank and save to remove it.</p>
     <form id="password-form">
       <label for="new-password">New password</label>
-      <input id="new-password" type="password" autocomplete="new-password">
-      <button type="submit">Save Password</button>
+      <div class="row">
+        <input id="new-password" type="password" autocomplete="new-password">
+        <button type="submit">Update Password</button>
+      </div>
       <p id="password-status"></p>
     </form>
+
+    <button id="quit-app" type="button">Quit Bluewater Kiosk</button>
   </section>
 
   <!-- Create Job / Edit Job -->
@@ -67,6 +70,15 @@
       <label for="parts">Number of parts</label>
       <input id="parts" name="parts" type="number" min="1" step="1" required value="4">
 
+      <label for="idCsv">Internal IDs (CSV)</label>
+      <p class="field-note muted">A Workflow export with an "Internal ID" column. The IDs are split, in order, into the parts above so each kiosk uses its own.</p>
+      <input id="idCsv" type="file" accept=".csv,text/csv">
+      <div id="id-summary" class="id-summary" hidden>
+        <p id="id-status"></p>
+        <ol id="id-parts" class="id-parts"></ol>
+      </div>
+      <p id="ids-locked" class="field-note muted" hidden>This job has entries, so its number of parts and Internal IDs can't change.</p>
+
       <div id="structure" class="structure" hidden>
         <h2>Departments &amp; Divisions</h2>
         <label class="checkbox"><input id="add-hod" type="checkbox"> Add HOD/DLCPO as a division?</label>
@@ -82,6 +94,7 @@
       <div class="actions">
         <button id="form-submit" class="primary" type="submit">Create Job</button>
         <a id="form-cancel" class="button" href="#/jobs">Cancel</a>
+        <button id="form-delete" class="danger push-right" type="button" hidden>Delete Job</button>
       </div>
     </form>
   </section>
@@ -125,7 +138,10 @@
         </div>
       </div>
 
-      <p class="form-note">Enter a home address (non-FPO) for your portrait proof to be sent to. Do not leave blank.</p>
+      <p class="form-note">
+        <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="currentColor"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>
+        <span>Enter a home address (non-FPO) for your portrait proof to be sent to. Do not leave blank.</span>
+      </p>
 
       <label for="entry-street">Street address</label>
       <input id="entry-street" name="street" type="text" autocomplete="off">
@@ -146,7 +162,10 @@
         </div>
       </div>
 
-      <p class="form-note">An online gallery with your portrait will be available. Please include a personal email and the email of any family members who may want a portrait.</p>
+      <p class="form-note">
+        <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true" fill="currentColor"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg>
+        <span>An online gallery with your portrait will be available. Please include a personal email and the email of any family members who may want a portrait.</span>
+      </p>
 
       <label for="entry-primaryEmail">Primary email</label>
       <input id="entry-primaryEmail" name="primaryEmail" type="email" autocomplete="off" required>
@@ -168,10 +187,23 @@
     </form>
   </section>
 
+  <!-- Asks which part of the job's Internal IDs this kiosk uses, when opening a job -->
+  <dialog id="part-dialog">
+    <form id="part-form">
+      <h2 id="part-title">Which part does this kiosk use?</h2>
+      <div id="part-options" class="part-options"></div>
+      <p id="part-error" class="error" hidden></p>
+      <div class="actions">
+        <button id="part-open" class="primary" type="submit">Open</button>
+        <button id="part-cancel" type="button">Cancel</button>
+      </div>
+    </form>
+  </dialog>
+
   <!-- Asks for the kiosk password before leaving the entry form -->
   <dialog id="unlock-dialog">
     <form id="unlock-form">
-      <label for="unlock-password">Enter the kiosk password</label>
+      <label for="unlock-password">Enter password</label>
       <input id="unlock-password" type="password" autocomplete="off" required>
       <p id="unlock-error" class="error" hidden>Incorrect password.</p>
       <div class="actions">

@@ -1,4 +1,4 @@
-// The Settings screen: printer and kiosk password.
+// The Settings screen: printer, kiosk password, and quitting the kiosk.
 import { show } from '../dom.js';
 
 const printerSelect = document.getElementById('printerName');
@@ -9,6 +9,9 @@ const printStatus = document.getElementById('print-status');
 const passwordForm = document.getElementById('password-form');
 const newPassword = document.getElementById('new-password');
 const passwordStatus = document.getElementById('password-status');
+const quitButton = document.getElementById('quit-app');
+
+quitButton.addEventListener('click', () => window.api.quit());
 
 export async function showSettings() {
   printStatus.textContent = '';

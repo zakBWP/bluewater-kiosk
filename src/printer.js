@@ -1,6 +1,7 @@
 import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import thermalPrinter from 'node-thermal-printer';
+import QRCode from 'qrcode';
 import { printUsb } from './usb-printer.js';
 
 const { ThermalPrinter, PrinterTypes } = thermalPrinter;
@@ -116,17 +117,44 @@ function createPrinter(printerName) {
   });
 }
 
+const GS = 0x1d;
+const QR_SCALE = 12; // printer dots per QR square
+const QR_MARGIN = 2; // blank squares above and below the code
+const PRINT_WIDTH = 360; // printable dots across 58 mm paper on the TM-m10
+
+// Prints `text` as a QR code, centered. The code is drawn here and sent as a raster image
+// (GS v 0) rather than with the printer's own QR command, whose size the printer limits. The
+// scale is reduced if the code would be wider than the paper.
+function printQrCode(printer, text) {
+  const { modules } = QRCode.create(text, { errorCorrectionLevel: 'M' });
+  const scale = Math.max(1, Math.min(QR_SCALE, Math.floor(PRINT_WIDTH / modules.size)));
+  const width = modules.size * scale;
+  const rowBytes = Math.ceil(width / 8);
+  const height = (modules.size + 2 * QR_MARGIN) * scale;
+  const image = Buffer.alloc(rowBytes * height); // one bit per dot, 1 = black
+
+  for (let y = 0; y < height; y++) {
+    const row = Math.floor(y / scale) - QR_MARGIN;
+    if (row < 0 || row >= modules.size) continue;
+    for (let x = 0; x < width; x++) {
+      if (modules.get(row, Math.floor(x / scale))) image[y * rowBytes + (x >> 3)] |= 0x80 >> (x & 7);
+    }
+  }
+  printer.append(Buffer.from([GS, 0x76, 0x30, 0, rowBytes & 0xff, rowBytes >> 8, height & 0xff, height >> 8]));
+  printer.append(image);
+}
+
 // SQLite stores datetime('now') in UTC as "YYYY-MM-DD HH:MM:SS".
 function localTime(sqliteUtc) {
   return new Date(sqliteUtc.replace(' ', 'T') + 'Z').toLocaleString();
 }
 
 // Adds the ticket for one entry to the printer's buffer. Empty optional fields are left out.
-export function buildEntryTicket(printer, { job, entry, rateLabel }) {
+export function buildEntryTicket(printer, { job, entry }) {
   const field = (label, value) => {
     if (!value) return;
     printer.bold(true);
-    printer.println(label);
+    printer.print(`${label}: `);
     printer.bold(false);
     printer.println(value);
   };
@@ -137,32 +165,24 @@ export function buildEntryTicket(printer, { job, entry, rateLabel }) {
   printer.println(job.name);
   printer.setTextNormal();
   printer.bold(false);
-  printer.println(`${job.commandType} - ${job.year}`);
   printer.println(localTime(entry.createdAt));
   printer.alignLeft();
   printer.drawLine();
 
-  field('Name', `${entry.firstName} ${entry.lastName}`);
-  field(rateLabel, entry.rateRank);
-  field('Pay grade', entry.payGrade);
-  field('Department', entry.department);
-  field('Division', entry.division);
-  printer.drawLine();
+  field('Name', `${entry.rateRank} ${entry.firstName} ${entry.lastName} (${entry.payGrade})`);
+  field('Department', entry.division ? `${entry.department} (${entry.division})` : entry.department);
 
-  const cityLine = [entry.city, [entry.state, entry.zip].filter(Boolean).join(' ')].filter(Boolean).join(', ');
-  if (entry.street || cityLine) {
-    printer.bold(true);
-    printer.println('Address');
-    printer.bold(false);
-    if (entry.street) printer.println(entry.street);
-    if (cityLine) printer.println(cityLine);
-  }
-  field('Primary email', entry.primaryEmail);
-  field('Secondary email', entry.secondaryEmail);
-  if (entry.street || cityLine || entry.primaryEmail || entry.secondaryEmail) printer.drawLine();
+  const stateZip = [entry.state, entry.zip].filter(Boolean).join(' ');
+  field('Address', [entry.street, entry.city, stateZip].filter(Boolean).join(', '));
+  field('Emails', [entry.primaryEmail, entry.secondaryEmail].filter(Boolean).join('; '));
 
   printer.alignCenter();
-  printer.println(`Entry ${entry.uuid.slice(0, 8).toUpperCase()}`);
+  if (entry.internalId) {
+    printQrCode(printer, entry.internalId);
+    printer.bold(true);
+    printer.println(entry.internalId);
+    printer.bold(false);
+  }
   printer.cut();
 }
 
@@ -172,31 +192,27 @@ export async function printEntryTicket(printerName, ticket) {
   return printer.execute();
 }
 
+// A ticket filled with made-up details, to check the printer and the ticket layout.
+const TEST_TICKET = {
+  job: { name: 'Test Print' },
+  entry: {
+    internalId: '1234567',
+    rateRank: 'AO3',
+    firstName: 'Jane',
+    lastName: 'Doe',
+    payGrade: 'E-4',
+    department: 'Air',
+    division: 'V-1',
+    street: '123 Main St',
+    city: 'Norfolk',
+    state: 'VA',
+    zip: '23511',
+    primaryEmail: 'jane.doe@example.com',
+    secondaryEmail: 'family@example.com',
+  },
+};
+
 export async function printTestReceipt(printerName) {
-  const printer = createPrinter(printerName);
-
-  const now = new Date();
-  printer.alignCenter();
-  printer.setTextDoubleHeight();
-  printer.setTextDoubleWidth();
-  printer.bold(true);
-  printer.println('TEST RECEIPT');
-  printer.bold(false);
-  printer.setTextNormal();
-  printer.println(now.toLocaleString());
-  printer.newLine();
-  printer.alignLeft();
-  printer.leftRight('Printer:', printerName);
-  printer.leftRight('Platform:', process.platform);
-  printer.drawLine();
-  printer.bold(true);
-  printer.println('Bold text');
-  printer.bold(false);
-  printer.newLine();
-  printer.alignCenter();
-  printer.printQR('bluewater-kiosk:print-test', { cellSize: 6 });
-  printer.println('bluewater-kiosk:print-test');
-  printer.cut();
-
-  return printer.execute();
+  const now = new Date().toISOString().slice(0, 19).replace('T', ' '); // as SQLite stores it
+  return printEntryTicket(printerName, { ...TEST_TICKET, entry: { ...TEST_TICKET.entry, createdAt: now } });
 }

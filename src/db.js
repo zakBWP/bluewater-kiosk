@@ -2,7 +2,9 @@ import { randomUUID } from 'node:crypto';
 import Database from 'better-sqlite3';
 import { COMMAND_TYPES } from './command-types.js';
 import { PAY_GRADES, rateLabelFor } from './entry-options.js';
+import { partNumbers, validateInternalIds } from './internal-ids.js';
 
+const NO_PART = "This kiosk hasn't been given a part. Go back to Jobs and open the job again to choose one.";
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const ZIP_PATTERN = /^\d{5}(-\d{4})?$/;
 
@@ -44,13 +46,7 @@ function validateEntry(job, input) {
   return { entry };
 }
 
-function optionalId(value) {
-  const id = Number(value);
-  return Number.isInteger(id) && id > 0 ? id : null;
-}
-
-// Returns { error } or { departments } with trimmed names. Each department and division keeps
-// its id (or null if it's new), so saving an edit can update rows in place.
+// Returns { error } or { departments } with trimmed names.
 function validateDepartments(input) {
   if (input === undefined || input === null) return { departments: [] };
   if (!Array.isArray(input)) return { error: 'Departments are invalid.' };
@@ -70,9 +66,9 @@ function validateDepartments(input) {
       if (!divName) return { error: `A division in ${name} needs a name.` };
       if (divisionNames.has(divName.toLowerCase())) return { error: `${name} has two divisions named "${divName}".` };
       divisionNames.add(divName.toLowerCase());
-      divisions.push({ id: optionalId(div.id), name: divName });
+      divisions.push({ name: divName });
     }
-    departments.push({ id: optionalId(dept.id), name, divisions });
+    departments.push({ name, divisions });
   }
   return { departments };
 }
@@ -89,22 +85,29 @@ function validateJob(input) {
   if (!Number.isInteger(year) || year < 1900 || year > 2100) return { error: 'Year must be between 1900 and 2100.' };
   if (!Number.isInteger(parts) || parts < 1) return { error: 'Number of parts must be at least 1.' };
 
+  const idCheck = validateInternalIds(input.internalIds ?? []);
+  if (idCheck.error) return { error: idCheck.error };
+  const { ids } = idCheck;
+  if (ids.length === 0) return { error: 'Upload a CSV of Internal IDs.' };
+  if (ids.length < parts) {
+    return { error: `There are only ${ids.length} Internal ID${ids.length === 1 ? '' : 's'}, not enough for ${parts} parts.` };
+  }
+
   const { error, departments } = validateDepartments(input.departments);
   if (error) return { error };
 
-  return { job: { name, commandType, year, parts, departments } };
+  return { job: { name, commandType, year, parts, departments, internalIds: ids } };
 }
 
-export function openDatabase(file) {
-  const db = new Database(file);
-  // Write-ahead logging: writes go to jobs.db-wal and are merged into jobs.db
-  // later, so reads don't block on writes. Creates the -wal/-shm side files.
-  db.pragma('journal_mode = WAL');
-  // Wait for each write to reach the disk before reporting success.
-  db.pragma('synchronous = FULL');
-  // Deleting a job or department also deletes what belongs to it.
-  db.pragma('foreign_keys = ON');
-  db.exec(`
+// Schema changes, in order. PRAGMA user_version counts how many have been applied, so each
+// runs once per database. Add new steps to the end; never edit one that has shipped.
+//
+// What belongs to a job falls in two groups. Its setup (the jobs row other than id and
+// created_at, and its internal_ids) is the same on every kiosk and is what gets exported.
+// Its entries, the settings, and anything about this particular kiosk stay local.
+const MIGRATIONS = [
+  // 1: the original schema.
+  (db) => db.exec(`
     CREATE TABLE IF NOT EXISTS jobs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
@@ -149,11 +152,73 @@ export function openDatabase(file) {
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
     CREATE INDEX IF NOT EXISTS entries_job ON entries(job_id);
+    -- The job's Internal IDs from its CSV, in file order, each assigned to one of the job's
+    -- parts (1-based) so every kiosk has its own run of IDs.
+    CREATE TABLE IF NOT EXISTS internal_ids (
+      job_id INTEGER NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+      position INTEGER NOT NULL,
+      part INTEGER NOT NULL,
+      code TEXT NOT NULL,
+      PRIMARY KEY (job_id, position),
+      UNIQUE (job_id, code)
+    );
     CREATE TABLE IF NOT EXISTS settings (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
     );
-  `);
+  `),
+
+  // 2: jobs get a uuid that's the same on every kiosk, and departments and divisions move
+  // from their own tables into a JSON column on jobs: [{ name, divisions: [{ name }] }].
+  (db) => {
+    db.exec(`
+      ALTER TABLE jobs ADD COLUMN uuid TEXT NOT NULL DEFAULT '';
+      ALTER TABLE jobs ADD COLUMN departments TEXT NOT NULL DEFAULT '[]';
+    `);
+    const departments = db.prepare('SELECT id, name FROM departments WHERE job_id = ? ORDER BY position');
+    const divisions = db.prepare('SELECT name FROM divisions WHERE department_id = ? ORDER BY position');
+    const setJob = db.prepare('UPDATE jobs SET uuid = ?, departments = ? WHERE id = ?');
+    for (const { id } of db.prepare('SELECT id FROM jobs').all()) {
+      const structure = departments.all(id).map((dept) => ({ name: dept.name, divisions: divisions.all(dept.id) }));
+      setJob.run(randomUUID(), JSON.stringify(structure), id);
+    }
+    db.exec(`
+      CREATE UNIQUE INDEX jobs_uuid ON jobs(uuid);
+      DROP TABLE divisions;
+      DROP TABLE departments;
+    `);
+  },
+
+  // 3: each entry uses up one of its job's Internal IDs, from the part this kiosk uses. The
+  // part is local to this kiosk: export leaves it out and import must not overwrite it.
+  // Entries made before this have no Internal ID.
+  (db) => db.exec(`
+    ALTER TABLE jobs ADD COLUMN kiosk_part INTEGER;
+    ALTER TABLE entries ADD COLUMN internal_id TEXT;
+    CREATE UNIQUE INDEX entries_internal_id ON entries(job_id, internal_id);
+  `),
+];
+
+function migrate(db) {
+  const applied = db.pragma('user_version', { simple: true });
+  MIGRATIONS.slice(applied).forEach((step, i) => {
+    db.transaction(() => {
+      step(db);
+      db.pragma(`user_version = ${applied + i + 1}`);
+    })();
+  });
+}
+
+export function openDatabase(file) {
+  const db = new Database(file);
+  // Write-ahead logging: writes go to jobs.db-wal and are merged into jobs.db
+  // later, so reads don't block on writes. Creates the -wal/-shm side files.
+  db.pragma('journal_mode = WAL');
+  // Wait for each write to reach the disk before reporting success.
+  db.pragma('synchronous = FULL');
+  // Deleting a job also deletes its Internal IDs.
+  db.pragma('foreign_keys = ON');
+  migrate(db);
 
   // No two jobs may share a name (ignoring case) and year. This fails while duplicates from
   // before the rule exist; the check in createJob/updateJob still applies, and the index
@@ -168,36 +233,53 @@ export function openDatabase(file) {
     'SELECT id FROM jobs WHERE lower(name) = lower(?) AND year = ? AND id != ?'
   );
   const insertJob = db.prepare(
-    'INSERT INTO jobs (name, command_type, year, parts) VALUES (?, ?, ?, ?)'
+    'INSERT INTO jobs (uuid, name, command_type, year, parts, departments) VALUES (?, ?, ?, ?, ?, ?)'
   );
-  const updateJob = db.prepare(
-    'UPDATE jobs SET name = ?, command_type = ?, year = ?, parts = ? WHERE id = ?'
-  );
+  // A kiosk part that no longer exists is cleared, so the kiosk is asked again on Open.
+  const updateJob = db.prepare(`
+    UPDATE jobs SET name = @name, command_type = @commandType, year = @year, parts = @parts,
+                    kiosk_part = CASE WHEN kiosk_part > @parts THEN NULL ELSE kiosk_part END,
+                    departments = @departments
+    WHERE id = @id
+  `);
+  const setKioskPart = db.prepare('UPDATE jobs SET kiosk_part = ? WHERE id = ?');
   const listJobs = db.prepare(
-    'SELECT id, name, command_type AS commandType, year, parts FROM jobs ORDER BY id'
+    'SELECT id, name, command_type AS commandType, year, parts FROM jobs ORDER BY id DESC'
   );
   const getJob = db.prepare(
-    'SELECT id, name, command_type AS commandType, year, parts, created_at AS createdAt FROM jobs WHERE id = ?'
+    `SELECT id, uuid, name, command_type AS commandType, year, parts, kiosk_part AS kioskPart, departments,
+            created_at AS createdAt
+     FROM jobs WHERE id = ?`
   );
 
-  const listDepartments = db.prepare('SELECT id, name FROM departments WHERE job_id = ? ORDER BY position');
-  const insertDepartment = db.prepare('INSERT INTO departments (job_id, name, position) VALUES (?, ?, ?)');
-  const updateDepartment = db.prepare('UPDATE departments SET name = ?, position = ? WHERE id = ?');
-  const deleteDepartment = db.prepare('DELETE FROM departments WHERE id = ?');
-
-  const listDivisions = db.prepare('SELECT id, name FROM divisions WHERE department_id = ? ORDER BY position');
-  const insertDivision = db.prepare('INSERT INTO divisions (department_id, name, position) VALUES (?, ?, ?)');
-  const updateDivision = db.prepare('UPDATE divisions SET name = ?, position = ? WHERE id = ?');
-  const deleteDivision = db.prepare('DELETE FROM divisions WHERE id = ?');
+  const listInternalIds = db.prepare('SELECT code FROM internal_ids WHERE job_id = ? ORDER BY position');
+  const insertInternalId = db.prepare('INSERT INTO internal_ids (job_id, position, part, code) VALUES (?, ?, ?, ?)');
+  const deleteInternalIds = db.prepare('DELETE FROM internal_ids WHERE job_id = ?');
+  const deleteEntries = db.prepare('DELETE FROM entries WHERE job_id = ?');
+  const deleteJob = db.prepare('DELETE FROM jobs WHERE id = ?');
+  // The first Internal ID in a part that no entry has used yet.
+  const nextFreeId = db.prepare(`
+    SELECT code FROM internal_ids i
+    WHERE job_id = ? AND part = ?
+      AND NOT EXISTS (SELECT 1 FROM entries e WHERE e.job_id = i.job_id AND e.internal_id = i.code)
+    ORDER BY position LIMIT 1
+  `);
+  // Each part's size and how many of its IDs entries have used.
+  const listParts = db.prepare(`
+    SELECT i.part, count(*) AS size, count(e.internal_id) AS used
+    FROM internal_ids i LEFT JOIN entries e ON e.job_id = i.job_id AND e.internal_id = i.code
+    WHERE i.job_id = ?
+    GROUP BY i.part ORDER BY i.part
+  `);
 
   const insertEntry = db.prepare(`
-    INSERT INTO entries (uuid, job_id, department, division, first_name, last_name, rate_rank, pay_grade,
-                         street, city, state, zip, primary_email, secondary_email)
-    VALUES (@uuid, @jobId, @department, @division, @firstName, @lastName, @rateRank, @payGrade,
-            @street, @city, @state, @zip, @primaryEmail, @secondaryEmail)
+    INSERT INTO entries (uuid, job_id, internal_id, department, division, first_name, last_name, rate_rank,
+                         pay_grade, street, city, state, zip, primary_email, secondary_email)
+    VALUES (@uuid, @jobId, @internalId, @department, @division, @firstName, @lastName, @rateRank,
+            @payGrade, @street, @city, @state, @zip, @primaryEmail, @secondaryEmail)
   `);
   const getEntry = db.prepare(`
-    SELECT uuid, job_id AS jobId, department, division, first_name AS firstName, last_name AS lastName,
+    SELECT uuid, job_id AS jobId, internal_id AS internalId, department, division, first_name AS firstName, last_name AS lastName,
            rate_rank AS rateRank, pay_grade AS payGrade, street, city, state, zip,
            primary_email AS primaryEmail, secondary_email AS secondaryEmail, created_at AS createdAt
     FROM entries WHERE uuid = ?
@@ -209,42 +291,27 @@ export function openDatabase(file) {
     'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value'
   );
 
-  // Makes a job's departments and divisions match the given list. Rows with a known id are
-  // updated in place, rows without one are added, and rows that are no longer listed are deleted.
-  function saveDepartments(jobId, departments) {
-    const existingDepartments = new Set(listDepartments.all(jobId).map((d) => d.id));
-    departments.forEach((dept, i) => {
-      let deptId = dept.id;
-      if (existingDepartments.has(deptId)) {
-        updateDepartment.run(dept.name, i, deptId);
-        existingDepartments.delete(deptId);
-      } else {
-        deptId = insertDepartment.run(jobId, dept.name, i).lastInsertRowid;
-      }
-
-      const existingDivisions = new Set(listDivisions.all(deptId).map((d) => d.id));
-      dept.divisions.forEach((div, j) => {
-        if (existingDivisions.has(div.id)) {
-          updateDivision.run(div.name, j, div.id);
-          existingDivisions.delete(div.id);
-        } else {
-          insertDivision.run(deptId, div.name, j);
-        }
-      });
-      for (const id of existingDivisions) deleteDivision.run(id);
-    });
-    for (const id of existingDepartments) deleteDepartment.run(id);
+  // Replaces a job's Internal IDs, splitting them into its parts.
+  function saveInternalIds(jobId, ids, parts) {
+    deleteInternalIds.run(jobId);
+    const partOf = partNumbers(ids.length, parts);
+    ids.forEach((code, i) => insertInternalId.run(jobId, i, partOf[i], code));
   }
 
   const createJobTx = db.transaction((job) => {
-    const jobId = insertJob.run(job.name, job.commandType, job.year, job.parts).lastInsertRowid;
-    saveDepartments(jobId, job.departments);
+    const jobId = insertJob.run(
+      randomUUID(), job.name, job.commandType, job.year, job.parts, JSON.stringify(job.departments),
+    ).lastInsertRowid;
+    saveInternalIds(jobId, job.internalIds, job.parts);
   });
 
   const updateJobTx = db.transaction((id, job) => {
-    const { changes } = updateJob.run(job.name, job.commandType, job.year, job.parts, id);
+    const { changes } = updateJob.run({
+      id, name: job.name, commandType: job.commandType, year: job.year, parts: job.parts,
+      departments: JSON.stringify(job.departments),
+    });
     if (changes === 0) return false;
-    saveDepartments(id, job.departments);
+    saveInternalIds(id, job.internalIds, job.parts);
     return true;
   });
 
@@ -260,10 +327,9 @@ export function openDatabase(file) {
     getJob(id) {
       const job = getJob.get(Number(id));
       if (!job) return null;
-      job.departments = listDepartments.all(job.id).map((dept) => ({
-        ...dept,
-        divisions: listDivisions.all(dept.id),
-      }));
+      job.departments = JSON.parse(job.departments);
+      job.internalIds = listInternalIds.all(job.id).map((row) => row.code);
+      job.entryCount = countEntries.get(job.id).n;
       return job;
     },
 
@@ -281,24 +347,64 @@ export function openDatabase(file) {
     updateJob(id, input) {
       const { error, job } = validateJob(input);
       if (error) return error;
+      // Entries hold Internal IDs by value, so once there are any, re-splitting or replacing the
+      // IDs could hand one out twice.
+      const saved = this.getJob(id);
+      if (saved?.entryCount > 0 && (job.parts !== saved.parts
+          || job.internalIds.join() !== saved.internalIds.join())) {
+        return "This job has entries, so its number of parts and Internal IDs can't change.";
+      }
       const duplicate = duplicateError(job, Number(id));
       if (duplicate) return duplicate;
       return updateJobTx(Number(id), job) ? null : 'Job not found.';
     },
 
-    // Returns { error } or { entry } once it's saved.
-    createEntry(jobId, input) {
-      const job = this.getJob(jobId);
+    // Returns { error } or { entry } once it's saved, with the next free Internal ID from this
+    // kiosk's part. Finding and using the ID happen in one transaction, and the unique index on
+    // entries(job_id, internal_id) means no two entries can ever get the same one.
+    createEntry: db.transaction((jobId, input) => {
+      const job = getJob.get(Number(jobId));
       if (!job) return { error: 'Job not found.' };
+      job.departments = JSON.parse(job.departments);
       const { error, entry } = validateEntry(job, input);
       if (error) return { error };
+      if (!job.kioskPart) return { error: NO_PART };
+      const free = nextFreeId.get(job.id, job.kioskPart);
+      if (!free) return { error: `All the Internal IDs in part ${job.kioskPart} have been used.` };
       const uuid = randomUUID();
-      insertEntry.run({ uuid, jobId: job.id, ...entry });
+      insertEntry.run({ uuid, jobId: job.id, internalId: free.code, ...entry });
       return { entry: getEntry.get(uuid) };
+    }),
+
+    // The job's parts: [{ part, size, left }].
+    listParts: (jobId) => listParts.all(Number(jobId)).map(({ used, ...p }) => ({ ...p, left: p.size - used })),
+
+    // How many of the Internal IDs in this kiosk's part are left: { part, size, left },
+    // or null if no part has been chosen.
+    partUsage(jobId) {
+      const job = getJob.get(Number(jobId));
+      if (!job?.kioskPart) return null;
+      return this.listParts(job.id).find((p) => p.part === job.kioskPart) ?? null;
     },
 
+    // Chooses which part this kiosk draws Internal IDs from. Returns an error message or null.
+    setKioskPart(jobId, part) {
+      const job = getJob.get(Number(jobId));
+      if (!job) return 'Job not found.';
+      const n = Number(part);
+      if (!Number.isInteger(n) || n < 1 || n > job.parts) return 'Choose a part.';
+      setKioskPart.run(n, job.id);
+      return null;
+    },
+
+    // Deletes a job, its Internal IDs, and its entries. Entries don't cascade with their job,
+    // so they're only ever removed here, on purpose. Returns false if there was no such job.
+    deleteJob: db.transaction((id) => {
+      deleteEntries.run(Number(id));
+      return deleteJob.run(Number(id)).changes > 0;
+    }),
+
     getEntry: (uuid) => getEntry.get(String(uuid)) || null,
-    countEntries: (jobId) => countEntries.get(Number(jobId)).n,
 
     getSetting(key, fallback) {
       const row = getSetting.get(key);

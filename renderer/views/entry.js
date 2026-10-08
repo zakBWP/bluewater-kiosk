@@ -36,10 +36,21 @@ function updateDivisions() {
   entryDivision.required = divisions.length > 0;
 }
 
-async function updateEntryCount() {
-  const count = await window.api.countEntries(entryJob.id);
-  entryJobInfo.textContent =
-    `${entryJob.name} (${entryJob.year}) | ${count} code${count === 1 ? '' : 's'} used`;
+// Shows how many Internal IDs are left in this kiosk's part. Returns false, with the form locked
+// and the reason shown, when there's none to give the next person.
+async function updatePartUsage() {
+  const usage = await window.api.partUsage(entryJob.id);
+  const codes = (n) => `${n} code${n === 1 ? '' : 's'}`;
+  const part = usage
+    ? `Part ${usage.part} | ${codes(usage.left)} left (${usage.size - usage.left} used)`
+    : 'No part chosen';
+  entryJobInfo.textContent = `${entryJob.name} (${entryJob.year}) | ${part}`;
+  if (usage && usage.left > 0) return true;
+  setEntryLocked(true);
+  showEntryStatus(usage
+    ? `All the Internal IDs in part ${usage.part} have been used.`
+    : "This kiosk hasn't been given a part. Go back to Jobs and open the job again to choose one.", { error: true });
+  return false;
 }
 
 function showEntryError(message) {
@@ -114,12 +125,15 @@ export async function showEntryForm(id) {
     ...job.departments.map((d) => new Option(d.name, d.name)),
   );
   updateDivisions();
-  await updateEntryCount();
   show('entry');
   const unprinted = await window.api.unprintedEntry();
   setEntryLocked(Boolean(unprinted));
-  if (unprinted) showUnprinted(unprinted, null);
-  else entryDepartment.focus();
+  if (unprinted) {
+    await updatePartUsage();
+    showUnprinted(unprinted, null);
+  } else if (await updatePartUsage()) {
+    entryDepartment.focus();
+  }
 }
 
 entryDepartment.addEventListener('change', updateDivisions);
@@ -147,11 +161,12 @@ entryForm.addEventListener('submit', async (event) => {
   showEntryError(null);
   entryForm.reset();
   updateDivisions();
-  await updateEntryCount();
   if (printError) {
+    await updatePartUsage();
     showUnprinted(entry, printError);
   } else {
     showPrinted(printWarning);
+    await updatePartUsage();
   }
 });
 
@@ -165,5 +180,6 @@ entryReprint.addEventListener('click', async () => {
     lastEntryUuid = null;
     setEntryLocked(false);
     showPrinted(printWarning);
+    await updatePartUsage();
   }
 });
