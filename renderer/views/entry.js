@@ -1,5 +1,5 @@
 // The data entry form for an opened job.
-import { isShown, placeholderOption, show } from '../dom.js';
+import { app, isShown, placeholderOption, show } from '../dom.js';
 
 const entryForm = document.getElementById('entry-form');
 const entryJobInfo = document.getElementById('entry-job-info');
@@ -47,9 +47,9 @@ async function updatePartUsage() {
   entryJobInfo.textContent = `${entryJob.name} (${entryJob.year}) | ${part}`;
   if (usage && usage.left > 0) return true;
   setEntryLocked(true);
-  showEntryStatus(usage
-    ? `All the Internal IDs in part ${usage.part} have been used.`
-    : "This kiosk hasn't been given a part. Go back to Jobs and open the job again to choose one.", { error: true });
+  // Mirrors NO_PART in src/db.js — keep in sync.
+  const noPart = "This kiosk hasn't been given a part. Go back to Jobs and open the job again to choose one.";
+  showEntryStatus(usage ? `All the Internal IDs in part ${usage.part} have been used.` : noPart, { error: true });
   return false;
 }
 
@@ -119,7 +119,7 @@ export async function showEntryForm(id) {
   showEntryError(null);
   hideSuccess();
   entryStatus.hidden = true;
-  entryRateLabel.textContent = await window.api.rateLabel(job.commandType);
+  entryRateLabel.textContent = app.rateLabels[job.commandType] ?? 'Rate/Rank';
   entryDepartment.replaceChildren(
     placeholderOption('Select department'),
     ...job.departments.map((d) => new Option(d.name, d.name)),

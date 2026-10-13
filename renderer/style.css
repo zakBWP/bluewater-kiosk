@@ -1,3 +1,5 @@
+/* Rules below that set display (like button's inline-block) would otherwise show hidden elements. */
+[hidden] { display: none !important; }
 body { font-family: system-ui, sans-serif; max-width: 760px; margin: 32px auto; padding: 0 16px; }
 label { display: block; margin-top: 16px; font-weight: 600; }
 input, select { width: 100%; padding: 8px; margin-top: 4px; box-sizing: border-box; font-size: 1rem; }

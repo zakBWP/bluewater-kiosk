@@ -34,8 +34,8 @@
     <div class="row">
       <select id="printerName"></select>
       <button id="refresh-printers" type="button">Refresh</button>
+      <button id="print-test" type="button">Test Print</button>
     </div>
-    <button id="print-test" type="button">Test Print</button>
     <p id="print-status"></p>
 
     <h2>Kiosk password</h2>
@@ -47,6 +47,14 @@
       </div>
       <p id="password-status"></p>
     </form>
+
+    <h2>Updates</h2>
+    <p id="app-version" class="muted"></p>
+    <div class="actions">
+      <button id="check-updates" type="button">Check for Updates</button>
+      <button id="install-update" class="primary" type="button" hidden>Download and Restart</button>
+    </div>
+    <p id="update-status"></p>
 
     <button id="quit-app" type="button">Quit Bluewater Kiosk</button>
   </section>

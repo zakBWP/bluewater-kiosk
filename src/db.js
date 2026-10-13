@@ -4,6 +4,7 @@ import { COMMAND_TYPES } from './command-types.js';
 import { PAY_GRADES, rateLabelFor } from './entry-options.js';
 import { partNumbers, validateInternalIds } from './internal-ids.js';
 
+// Same message shown in renderer/views/entry.js when updatePartUsage finds no part — keep in sync.
 const NO_PART = "This kiosk hasn't been given a part. Go back to Jobs and open the job again to choose one.";
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const ZIP_PATTERN = /^\d{5}(-\d{4})?$/;
@@ -27,6 +28,7 @@ function validateEntry(job, input) {
     secondaryEmail: text('secondaryEmail'),
   };
 
+  // Ensure the department and division are valid for this job, and that required fields are present.
   const dept = job.departments.find((d) => d.name === entry.department);
   if (!dept) return { error: 'Please select a department.' };
   if (dept.divisions.length > 0) {
@@ -101,42 +103,35 @@ function validateJob(input) {
 
 // Schema changes, in order. PRAGMA user_version counts how many have been applied, so each
 // runs once per database. Add new steps to the end; never edit one that has shipped.
-//
-// What belongs to a job falls in two groups. Its setup (the jobs row other than id and
-// created_at, and its internal_ids) is the same on every kiosk and is what gets exported.
-// Its entries, the settings, and anything about this particular kiosk stay local.
+
 const MIGRATIONS = [
-  // 1: the original schema.
+  // 1: The schema.
   (db) => db.exec(`
-    CREATE TABLE IF NOT EXISTS jobs (
+    -- uuid is the same on every kiosk. departments is JSON, [{ name, divisions: [{ name }] }],
+    -- so a job's departments can be handled as one value. kiosk_part is the part this kiosk
+    -- draws Internal IDs from; it's local to this kiosk, so export leaves it out and import
+    -- must not overwrite it. No two jobs may share a name (ignoring case) and year.
+    CREATE TABLE jobs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
+      uuid TEXT NOT NULL UNIQUE,
       name TEXT NOT NULL,
       command_type TEXT NOT NULL,
       year INTEGER NOT NULL,
       parts INTEGER NOT NULL,
+      kiosk_part INTEGER,
+      departments TEXT NOT NULL DEFAULT '[]',
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
-    CREATE TABLE IF NOT EXISTS departments (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      job_id INTEGER NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
-      name TEXT NOT NULL,
-      position INTEGER NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS divisions (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      department_id INTEGER NOT NULL REFERENCES departments(id) ON DELETE CASCADE,
-      name TEXT NOT NULL,
-      position INTEGER NOT NULL
-    );
-    CREATE INDEX IF NOT EXISTS departments_job ON departments(job_id);
-    CREATE INDEX IF NOT EXISTS divisions_department ON divisions(department_id);
+    CREATE UNIQUE INDEX jobs_name_year ON jobs (lower(name), year);
     -- People's information entered at the kiosk. Department and division are stored by name,
     -- so later edits to a job's departments don't change past entries. A job that has entries
-    -- can't be deleted (no ON DELETE CASCADE), so entries can't disappear with it.
-    CREATE TABLE IF NOT EXISTS entries (
+    -- can't be deleted (no ON DELETE CASCADE), so entries can't disappear with it. Each entry
+    -- uses up one of its job's Internal IDs, and the unique index means no two can share one.
+    CREATE TABLE entries (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       uuid TEXT NOT NULL UNIQUE,
       job_id INTEGER NOT NULL REFERENCES jobs(id),
+      internal_id TEXT NOT NULL,
       department TEXT NOT NULL,
       division TEXT NOT NULL DEFAULT '',
       first_name TEXT NOT NULL,
@@ -151,10 +146,10 @@ const MIGRATIONS = [
       secondary_email TEXT NOT NULL DEFAULT '',
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
-    CREATE INDEX IF NOT EXISTS entries_job ON entries(job_id);
+    CREATE UNIQUE INDEX entries_internal_id ON entries(job_id, internal_id);
     -- The job's Internal IDs from its CSV, in file order, each assigned to one of the job's
     -- parts (1-based) so every kiosk has its own run of IDs.
-    CREATE TABLE IF NOT EXISTS internal_ids (
+    CREATE TABLE internal_ids (
       job_id INTEGER NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
       position INTEGER NOT NULL,
       part INTEGER NOT NULL,
@@ -162,40 +157,10 @@ const MIGRATIONS = [
       PRIMARY KEY (job_id, position),
       UNIQUE (job_id, code)
     );
-    CREATE TABLE IF NOT EXISTS settings (
+    CREATE TABLE settings (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
     );
-  `),
-
-  // 2: jobs get a uuid that's the same on every kiosk, and departments and divisions move
-  // from their own tables into a JSON column on jobs: [{ name, divisions: [{ name }] }].
-  (db) => {
-    db.exec(`
-      ALTER TABLE jobs ADD COLUMN uuid TEXT NOT NULL DEFAULT '';
-      ALTER TABLE jobs ADD COLUMN departments TEXT NOT NULL DEFAULT '[]';
-    `);
-    const departments = db.prepare('SELECT id, name FROM departments WHERE job_id = ? ORDER BY position');
-    const divisions = db.prepare('SELECT name FROM divisions WHERE department_id = ? ORDER BY position');
-    const setJob = db.prepare('UPDATE jobs SET uuid = ?, departments = ? WHERE id = ?');
-    for (const { id } of db.prepare('SELECT id FROM jobs').all()) {
-      const structure = departments.all(id).map((dept) => ({ name: dept.name, divisions: divisions.all(dept.id) }));
-      setJob.run(randomUUID(), JSON.stringify(structure), id);
-    }
-    db.exec(`
-      CREATE UNIQUE INDEX jobs_uuid ON jobs(uuid);
-      DROP TABLE divisions;
-      DROP TABLE departments;
-    `);
-  },
-
-  // 3: each entry uses up one of its job's Internal IDs, from the part this kiosk uses. The
-  // part is local to this kiosk: export leaves it out and import must not overwrite it.
-  // Entries made before this have no Internal ID.
-  (db) => db.exec(`
-    ALTER TABLE jobs ADD COLUMN kiosk_part INTEGER;
-    ALTER TABLE entries ADD COLUMN internal_id TEXT;
-    CREATE UNIQUE INDEX entries_internal_id ON entries(job_id, internal_id);
   `),
 ];
 
@@ -211,7 +176,7 @@ function migrate(db) {
 
 export function openDatabase(file) {
   const db = new Database(file);
-  // Write-ahead logging: writes go to jobs.db-wal and are merged into jobs.db
+  // Write-ahead logging: writes go to kiosk.db-wal and are merged into kiosk.db
   // later, so reads don't block on writes. Creates the -wal/-shm side files.
   db.pragma('journal_mode = WAL');
   // Wait for each write to reach the disk before reporting success.
@@ -219,15 +184,6 @@ export function openDatabase(file) {
   // Deleting a job also deletes its Internal IDs.
   db.pragma('foreign_keys = ON');
   migrate(db);
-
-  // No two jobs may share a name (ignoring case) and year. This fails while duplicates from
-  // before the rule exist; the check in createJob/updateJob still applies, and the index
-  // is added on a later start once they're gone.
-  try {
-    db.exec('CREATE UNIQUE INDEX IF NOT EXISTS jobs_name_year ON jobs (lower(name), year)');
-  } catch (err) {
-    if (err.code !== 'SQLITE_CONSTRAINT_UNIQUE') throw err;
-  }
 
   const findDuplicateJob = db.prepare(
     'SELECT id FROM jobs WHERE lower(name) = lower(?) AND year = ? AND id != ?'
@@ -270,6 +226,12 @@ export function openDatabase(file) {
     FROM internal_ids i LEFT JOIN entries e ON e.job_id = i.job_id AND e.internal_id = i.code
     WHERE i.job_id = ?
     GROUP BY i.part ORDER BY i.part
+  `);
+  const getPartUsage = db.prepare(`
+    SELECT i.part, count(*) AS size, count(e.internal_id) AS used
+    FROM internal_ids i LEFT JOIN entries e ON e.job_id = i.job_id AND e.internal_id = i.code
+    WHERE i.job_id = ? AND i.part = ?
+    GROUP BY i.part
   `);
 
   const insertEntry = db.prepare(`
@@ -384,7 +346,8 @@ export function openDatabase(file) {
     partUsage(jobId) {
       const job = getJob.get(Number(jobId));
       if (!job?.kioskPart) return null;
-      return this.listParts(job.id).find((p) => p.part === job.kioskPart) ?? null;
+      const row = getPartUsage.get(job.id, job.kioskPart);
+      return row ? { part: row.part, size: row.size, left: row.size - row.used } : null;
     },
 
     // Chooses which part this kiosk draws Internal IDs from. Returns an error message or null.

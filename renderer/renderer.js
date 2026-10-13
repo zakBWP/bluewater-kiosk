@@ -26,7 +26,9 @@ window.addEventListener('hashchange', route);
 (async () => {
   const info = await window.api.getInfo();
   app.currentYear = info.currentYear;
+  app.version = info.version;
   app.commandStructures = info.commandStructures;
+  app.rateLabels = info.rateLabels;
   fillCommandTypes(info.commandTypes);
   fillPayGrades(info.payGrades);
   await route();

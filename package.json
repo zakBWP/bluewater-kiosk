@@ -9,10 +9,23 @@
     "start": "electron .",
     "dev": "electron . --windowed",
     "rebuild": "electron-rebuild -f -w better-sqlite3",
-    "postinstall": "electron-rebuild -f -w better-sqlite3"
+    "postinstall": "electron-rebuild -f -w better-sqlite3",
+    "dist:win": "electron-builder --win --publish never"
+  },
+  "build": {
+    "appId": "com.bluewaterkiosk.app",
+    "files": ["main.js", "preload.cjs", "src/**/*", "renderer/**/*", "package.json"],
+    "win": { "target": "nsis" },
+    "publish": {
+      "provider": "github",
+      "owner": "zakBWP",
+      "repo": "bluewater-kiosk-releases",
+      "releaseType": "release"
+    }
   },
   "dependencies": {
     "better-sqlite3": "^13.0.3",
+    "electron-updater": "^6.8.9",
     "koffi": "^3.3.2",
     "node-thermal-printer": "^4.6.1",
     "qrcode": "^1.5.4",
@@ -20,7 +33,8 @@
   },
   "devDependencies": {
     "@electron/rebuild": "^4.2.1",
-    "electron": "^44.6.0"
+    "electron": "^44.6.0",
+    "electron-builder": "^26.15.3"
   },
   "allowScripts": {
     "better-sqlite3@13.0.3": true,

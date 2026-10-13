@@ -1,13 +1,24 @@
 import path from 'node:path';
 import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import { app, BrowserWindow, ipcMain, Menu } from 'electron';
+import electronUpdater from 'electron-updater';
 import { openDatabase } from './src/db.js';
 import { COMMAND_TYPES, COMMAND_STRUCTURES } from './src/command-types.js';
 import { PAY_GRADES, rateLabelFor } from './src/entry-options.js';
 import { readInternalIdCsv } from './src/internal-ids.js';
 import { DEFAULT_PRINTER_NAME, printEntryTicket, printTestReceipt } from './src/printer.js';
 
+const { autoUpdater } = electronUpdater;
+
 let db;
+
+// Updates come from the GitHub Releases named under "publish" in package.json, but only when
+// someone asks for them in Settings: nothing is checked, downloaded or installed on its own.
+autoUpdater.autoDownload = false;
+autoUpdater.autoInstallOnAppQuit = false;
+// Failures reach Settings through the rejected promises below; without a listener, the
+// updater's own 'error' event would crash the app.
+autoUpdater.on('error', () => {});
 
 // `npm run dev` opens an ordinary window with the default menu (Reload, Developer Tools, ...)
 // for working on the app. Otherwise it runs as a full-screen kiosk with no menu.
@@ -73,17 +84,18 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
-  db = openDatabase(process.env.DB_PATH || path.join(app.getPath('userData'), 'jobs.db'));
+  db = openDatabase(process.env.DB_PATH || path.join(app.getPath('userData'), 'kiosk.db'));
   if (!WINDOWED) Menu.setApplicationMenu(kioskMenu());
 
   ipcMain.handle('app:info', () => ({
     commandTypes: COMMAND_TYPES,
     commandStructures: COMMAND_STRUCTURES,
     payGrades: PAY_GRADES,
+    rateLabels: Object.fromEntries(COMMAND_TYPES.map((t) => [t, rateLabelFor(t)])),
     currentYear: new Date().getFullYear(),
+    version: app.getVersion(),
   }));
   ipcMain.handle('app:quit', () => app.quit());
-  ipcMain.handle('jobs:rateLabel', (event, commandType) => rateLabelFor(commandType));
   ipcMain.handle('jobs:list', () => db.listJobs());
   ipcMain.handle('jobs:get', (event, id) => db.getJob(id));
   ipcMain.handle('jobs:create', (event, input) => ({ error: db.createJob(input) }));
@@ -131,7 +143,6 @@ app.whenReady().then(() => {
   ipcMain.handle('printer:test', async (event, printerName) => {
     const name = String(printerName || '').trim();
     if (!name) return { error: 'Enter a printer name.' };
-    db.setSetting('printerName', name);
     try {
       const { confirmed, paperLow } = await printTestReceipt(name);
       const message = confirmed
@@ -141,6 +152,31 @@ app.whenReady().then(() => {
     } catch (err) {
       return { error: err.message };
     }
+  });
+  const unpackagedError = () => app.isPackaged ? null : { error: 'Updates only work in the installed app.' };
+
+  ipcMain.handle('updates:check', async () => {
+    const err = unpackagedError();
+    if (err) return err;
+    try {
+      const result = await autoUpdater.checkForUpdates();
+      if (!result?.isUpdateAvailable) return { message: `Bluewater Kiosk is up to date (version ${app.getVersion()}).` };
+      return { available: result.updateInfo.version };
+    } catch {
+      return { error: "Couldn't check for updates. Check the internet connection and try again." };
+    }
+  });
+  // Downloads the update found by the last check, then quits, installs it, and reopens the app.
+  ipcMain.handle('updates:install', async () => {
+    const err = unpackagedError();
+    if (err) return err;
+    try {
+      await autoUpdater.downloadUpdate();
+    } catch {
+      return { error: "Couldn't download the update. Check the internet connection and try again." };
+    }
+    autoUpdater.quitAndInstall(true, true);
+    return {};
   });
 
   createWindow();

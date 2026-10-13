@@ -9,7 +9,6 @@ contextBridge.exposeInMainWorld('api', {
   updateJob: (id, job) => ipcRenderer.invoke('jobs:update', id, job),
   deleteJob: (id) => ipcRenderer.invoke('jobs:delete', id),
   readIdCsv: (text) => ipcRenderer.invoke('jobs:readIdCsv', text),
-  rateLabel: (commandType) => ipcRenderer.invoke('jobs:rateLabel', commandType),
   createEntry: (jobId, entry) => ipcRenderer.invoke('entries:create', jobId, entry),
   reprintEntry: (uuid) => ipcRenderer.invoke('entries:reprint', uuid),
   unprintedEntry: () => ipcRenderer.invoke('entries:unprinted'),
@@ -23,4 +22,6 @@ contextBridge.exposeInMainWorld('api', {
   getPrinterName: () => ipcRenderer.invoke('printer:getName'),
   setPrinterName: (printerName) => ipcRenderer.invoke('printer:setName', printerName),
   printTest: (printerName) => ipcRenderer.invoke('printer:test', printerName),
+  checkForUpdates: () => ipcRenderer.invoke('updates:check'),
+  installUpdate: () => ipcRenderer.invoke('updates:install'),
 });

@@ -10,7 +10,9 @@ const views = {
 // Filled once at start-up from window.api.getInfo().
 export const app = {
   currentYear: null,
+  version: null,
   commandStructures: {}, // default departments and divisions per command type
+  rateLabels: {},        // rate/rank label per command type
 };
 
 export function show(name) {
