@@ -1,6 +1,5 @@
-# Builds the Windows installer and publishes it to zakBWP/bluewater-kiosk-releases, where the
-# kiosks look for updates. Runs when a version tag is pushed, e.g. `git tag v1.1.0 && git push origin v1.1.0`.
-# Needs the RELEASES_TOKEN secret: a fine-grained token with Contents: read and write on the releases repo.
+# Builds the Windows installer and publishes it to this repo's releases, where the kiosks look
+# for updates. Runs when a version tag is pushed, e.g. `git tag v1.1.0 && git push origin v1.1.0`.
 name: Release
 
 on:
@@ -33,4 +32,4 @@ jobs:
       - name: Build and publish
         run: npx electron-builder --win --publish always
         env:
-          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

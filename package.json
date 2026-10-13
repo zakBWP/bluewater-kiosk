@@ -19,7 +19,7 @@
     "publish": {
       "provider": "github",
       "owner": "zakBWP",
-      "repo": "bluewater-kiosk-releases",
+      "repo": "bluewater-kiosk",
       "releaseType": "release"
     }
   },
