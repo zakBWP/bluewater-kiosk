@@ -5,6 +5,7 @@ import electronUpdater from 'electron-updater';
 import { openDatabase } from './src/db.js';
 import { COMMAND_TYPES, COMMAND_STRUCTURES } from './src/command-types.js';
 import { PAY_GRADES, rateLabelFor } from './src/entry-options.js';
+import { entriesCsv } from './src/entries-csv.js';
 import { readInternalIdCsv } from './src/internal-ids.js';
 import { DEFAULT_PRINTER_NAME, printEntryTicket, printTestReceipt } from './src/printer.js';
 
@@ -102,6 +103,10 @@ app.whenReady().then(() => {
   ipcMain.handle('jobs:update', (event, id, input) => ({ error: db.updateJob(id, input) }));
   ipcMain.handle('jobs:delete', (event, id) => db.deleteJob(id));
   ipcMain.handle('jobs:readIdCsv', (event, text) => readInternalIdCsv(text));
+  ipcMain.handle('jobs:entriesCsv', (event, id) => {
+    const job = db.getJob(id);
+    return job ? entriesCsv(job, db.listEntries(job.id)) : null;
+  });
   // The entry is saved before printing, so a printer problem never loses data.
   ipcMain.handle('entries:create', async (event, jobId, input) => {
     if (unprintedEntry()) return { error: "The last ticket hasn't printed yet. Fix the printer and press Reprint." };

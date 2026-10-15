@@ -22,7 +22,7 @@
         <a class="button primary" href="#/jobs/new">Create Job</a>
       </div>
     </div>
-    <input id="import-input" type="file" accept=".job" hidden>
+    <input id="import-input" type="file" accept=".bwp" hidden>
     <p id="import-error" class="error" hidden></p>
     <p id="no-jobs" class="muted" hidden>No jobs yet. Create one to get started.</p>
     <ul id="job-list" class="job-list" hidden></ul>
@@ -105,7 +105,8 @@
       <div class="actions">
         <button id="form-submit" class="primary" type="submit">Create Job</button>
         <a id="form-cancel" class="button" href="#/jobs">Cancel</a>
-        <button id="form-delete" class="danger push-right" type="button" hidden>Delete Job</button>
+        <button id="form-download" class="push-right" type="button" hidden>Download job data</button>
+        <button id="form-delete" class="danger" type="button" hidden>Delete Job</button>
       </div>
     </form>
   </section>

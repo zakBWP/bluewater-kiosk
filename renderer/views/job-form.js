@@ -7,6 +7,7 @@ const formTitle = document.getElementById('form-title');
 const formSubmit = document.getElementById('form-submit');
 const formCancel = document.getElementById('form-cancel');
 const formDelete = document.getElementById('form-delete');
+const formDownload = document.getElementById('form-download');
 const errorEl = document.getElementById('error');
 const commandTypeSelect = document.getElementById('commandType');
 const partsInput = document.getElementById('parts');
@@ -104,6 +105,7 @@ export async function showForm(id) {
     editingId = null;
     editingJob = null;
     formDelete.hidden = true;
+    formDownload.hidden = true;
     formTitle.textContent = 'Create Job';
     formSubmit.textContent = 'Create Job';
     formCancel.href = '#/jobs';
@@ -121,6 +123,7 @@ export async function showForm(id) {
     editingId = id;
     editingJob = job;
     formDelete.hidden = false;
+    formDownload.hidden = false;
     formTitle.textContent = 'Edit Job';
     formSubmit.textContent = 'Save Changes';
     formCancel.href = '#/jobs';
@@ -145,6 +148,17 @@ formDelete.addEventListener('click', async () => {
   if (!confirm(`Delete ${name} (${year})?${lost} This can't be undone.`)) return;
   await window.api.deleteJob(editingId);
   location.hash = '#/jobs';
+});
+
+// Downloads every entry recorded for this job on this kiosk as a CSV.
+formDownload.addEventListener('click', async () => {
+  const csv = await window.api.entriesCsv(editingId);
+  if (csv === null) return;
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+  a.download = `${editingJob.name} ${editingJob.year} data.csv`;
+  a.click();
+  URL.revokeObjectURL(a.href);
 });
 
 form.addEventListener('submit', async (event) => {

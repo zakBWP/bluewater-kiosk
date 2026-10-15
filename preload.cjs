@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld('api', {
   updateJob: (id, job) => ipcRenderer.invoke('jobs:update', id, job),
   deleteJob: (id) => ipcRenderer.invoke('jobs:delete', id),
   readIdCsv: (text) => ipcRenderer.invoke('jobs:readIdCsv', text),
+  entriesCsv: (id) => ipcRenderer.invoke('jobs:entriesCsv', id),
   createEntry: (jobId, entry) => ipcRenderer.invoke('entries:create', jobId, entry),
   reprintEntry: (uuid) => ipcRenderer.invoke('entries:reprint', uuid),
   unprintedEntry: () => ipcRenderer.invoke('entries:unprinted'),

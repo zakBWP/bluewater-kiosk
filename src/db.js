@@ -246,6 +246,15 @@ export function openDatabase(file) {
            primary_email AS primaryEmail, secondary_email AS secondaryEmail, created_at AS createdAt
     FROM entries WHERE uuid = ?
   `);
+  // Entries don't store their part, but their Internal ID's part is fixed once a job has entries.
+  const listEntries = db.prepare(`
+    SELECT i.part, e.internal_id AS internalId, e.department, e.division, e.first_name AS firstName,
+           e.last_name AS lastName, e.rate_rank AS rateRank, e.pay_grade AS payGrade, e.street, e.city,
+           e.state, e.zip, e.primary_email AS primaryEmail, e.secondary_email AS secondaryEmail,
+           e.created_at AS createdAt
+    FROM entries e LEFT JOIN internal_ids i ON i.job_id = e.job_id AND i.code = e.internal_id
+    WHERE e.job_id = ? ORDER BY e.id
+  `);
   const countEntries = db.prepare('SELECT count(*) AS n FROM entries WHERE job_id = ?');
 
   const getSetting = db.prepare('SELECT value FROM settings WHERE key = ?');
@@ -368,6 +377,9 @@ export function openDatabase(file) {
     }),
 
     getEntry: (uuid) => getEntry.get(String(uuid)) || null,
+
+    // A job's entries, oldest first.
+    listEntries: (jobId) => listEntries.all(Number(jobId)),
 
     getSetting(key, fallback) {
       const row = getSetting.get(key);

@@ -42,7 +42,7 @@ async function exportJob(job) {
   };
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
-  a.download = `${full.name} ${full.year}.job`;
+  a.download = `${full.name} ${full.year}.bwp`;
   a.click();
   URL.revokeObjectURL(a.href);
 }
