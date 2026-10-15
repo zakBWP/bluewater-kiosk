@@ -1,7 +1,7 @@
 {
   "name": "bluewater-kiosk",
   "productName": "Bluewater Kiosk",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "private": true,
   "type": "module",
   "main": "main.js",
@@ -14,8 +14,16 @@
   },
   "build": {
     "appId": "com.bluewaterkiosk.app",
-    "files": ["main.js", "preload.cjs", "src/**/*", "renderer/**/*", "package.json"],
-    "win": { "target": "nsis" },
+    "files": [
+      "main.js",
+      "preload.cjs",
+      "src/**/*",
+      "renderer/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis"
+    },
     "publish": {
       "provider": "github",
       "owner": "zakBWP",
