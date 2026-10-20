@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import { app, BrowserWindow, ipcMain, Menu } from 'electron';
@@ -58,9 +59,8 @@ function unprintedEntry() {
 // Prints an entry's ticket on the chosen printer and records whether it's still owed.
 // Returns { printError, printWarning }.
 async function printTicket(entry) {
-  const job = db.getJob(entry.jobId);
   try {
-    const { paperLow } = await printEntryTicket(db.getSetting('printerName', DEFAULT_PRINTER_NAME), { job, entry });
+    const { paperLow } = await printEntryTicket(db.getSetting('printerName', DEFAULT_PRINTER_NAME), entry);
     db.setSetting(UNPRINTED, '');
     return { printError: null, printWarning: paperLow ? PAPER_LOW : null };
   } catch (err) {
@@ -68,6 +68,45 @@ async function printTicket(entry) {
     return { printError: err.message, printWarning: null };
   }
 }
+
+// Job files (.bwp) opened from Explorer or Finder. Windows passes them on the command line,
+// to this instance or, once it's running, to the copy that hands them over and quits; macOS
+// sends 'open-file'. They wait in pendingFiles until the page is ready to import them.
+const pendingFiles = [];
+let fileReceiver = null; // the page's webContents, once it's listening for files
+
+const jobFileArgs = (argv) => argv.filter((arg) => /\.bwp$/i.test(arg));
+
+async function openJobFile(file) {
+  if (!fileReceiver) {
+    pendingFiles.push(file);
+    return;
+  }
+  let text = '';
+  try {
+    text = await readFile(file, 'utf8');
+  } catch { /* the import reports it as not a valid job file */ }
+  fileReceiver.send('jobs:openFile', { name: path.basename(file), text });
+}
+
+const isFirstInstance = app.requestSingleInstanceLock();
+if (!isFirstInstance) app.quit();
+
+app.on('second-instance', (event, argv) => {
+  jobFileArgs(argv).forEach(openJobFile);
+  const [win] = BrowserWindow.getAllWindows();
+  if (win) {
+    if (win.isMinimized()) win.restore();
+    win.focus();
+  }
+});
+
+app.on('open-file', (event, file) => {
+  event.preventDefault();
+  openJobFile(file);
+});
+
+pendingFiles.push(...jobFileArgs(process.argv.slice(1)));
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -85,6 +124,7 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  if (!isFirstInstance) return;
   db = openDatabase(process.env.DB_PATH || path.join(app.getPath('userData'), 'kiosk.db'));
   if (!WINDOWED) Menu.setApplicationMenu(kioskMenu());
 
@@ -102,6 +142,13 @@ app.whenReady().then(() => {
   ipcMain.handle('jobs:create', (event, input) => ({ error: db.createJob(input) }));
   ipcMain.handle('jobs:update', (event, id, input) => ({ error: db.updateJob(id, input) }));
   ipcMain.handle('jobs:delete', (event, id) => db.deleteJob(id));
+  ipcMain.on('jobs:openFileReady', (event) => {
+    fileReceiver = event.sender;
+    event.sender.once('destroyed', () => {
+      if (fileReceiver === event.sender) fileReceiver = null;
+    });
+    pendingFiles.splice(0).forEach(openJobFile);
+  });
   ipcMain.handle('jobs:readIdCsv', (event, text) => readInternalIdCsv(text));
   ipcMain.handle('jobs:entriesCsv', (event, id) => {
     const job = db.getJob(id);

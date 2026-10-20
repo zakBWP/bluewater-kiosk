@@ -1,5 +1,5 @@
 // The jobs list: the start screen.
-import { linkButton, show } from '../dom.js';
+import { isShown, linkButton, show } from '../dom.js';
 import { choosePart } from './part-dialog.js';
 
 const jobList = document.getElementById('job-list');
@@ -73,28 +73,31 @@ importButton.addEventListener('click', () => {
   importInput.click();
 });
 
-importInput.addEventListener('change', async () => {
-  const file = importInput.files[0];
-  if (!file) return;
+// Imports a job from a .bwp file's text. Shows any problem above the jobs list, and refreshes
+// the list if it's on screen; files opened from outside never change the screen, so they
+// can't be used to leave the entry form without the kiosk password.
+async function importJobFile(name, text) {
+  const fail = (message) => {
+    importError.textContent = message;
+    importError.hidden = false;
+  };
   let data;
   try {
-    data = JSON.parse(await file.text());
+    data = JSON.parse(text);
   } catch {
-    importError.textContent = `${file.name}: not a valid job file.`;
-    importError.hidden = false;
-    return;
+    return fail(`${name}: not a valid job file.`);
   }
-  if (!data?.bluewaterKiosk || !data?.job) {
-    importError.textContent = `${file.name}: not a valid job file.`;
-    importError.hidden = false;
-    return;
-  }
+  if (!data?.bluewaterKiosk || !data?.job) return fail(`${name}: not a valid job file.`);
   const { error } = await window.api.createJob(data.job);
-  if (error) {
-    importError.textContent = error;
-    importError.hidden = false;
-    return;
-  }
+  if (error) return fail(error);
   importError.hidden = true;
-  await showList();
+  if (isShown('list')) await showList();
+}
+
+importInput.addEventListener('change', async () => {
+  const file = importInput.files[0];
+  if (file) await importJobFile(file.name, await file.text());
 });
+
+// .bwp files opened from Explorer or Finder, including the one the app was started with.
+window.api.onOpenFile(({ name, text }) => importJobFile(name, text));

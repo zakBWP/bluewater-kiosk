@@ -25,4 +25,9 @@ contextBridge.exposeInMainWorld('api', {
   printTest: (printerName) => ipcRenderer.invoke('printer:test', printerName),
   checkForUpdates: () => ipcRenderer.invoke('updates:check'),
   installUpdate: () => ipcRenderer.invoke('updates:install'),
+  // Calls back with { name, text } for each .bwp file opened from outside the app.
+  onOpenFile: (callback) => {
+    ipcRenderer.on('jobs:openFile', (event, file) => callback(file));
+    ipcRenderer.send('jobs:openFileReady');
+  },
 });
