@@ -40,6 +40,20 @@ function withTimeout(promise, ms, message) {
   ]).finally(() => clearTimeout(timer));
 }
 
+// Explains why the chosen printer's serial number isn't on USB. A print queue belongs to one
+// printer, so another printer plugged in in its place (even the same model) isn't used.
+async function missingPrinterProblem(usb) {
+  let others = [];
+  try {
+    others = (await usb.getDevices()).filter((d) => d.configurations.some((c) =>
+      c.interfaces.some((i) => i.alternates.some((a) => a.interfaceClass === PRINTER_CLASS))));
+  } catch { /* fall back to the usual message */ }
+  if (!others.length) return PRINTER_OFF;
+  const name = others[0].productName || 'printer';
+  return `A different ${name} is plugged in than the one chosen in Settings. Add this printer in `
+    + 'Printers & Scanners, then choose it in Settings.';
+}
+
 class UsbPrinter {
   constructor(device) {
     this.device = device;
@@ -49,7 +63,7 @@ class UsbPrinter {
   static async open(serial) {
     const usb = new WebUSB({ allowAllDevices: true });
     const device = await usb.findDeviceBySerial(serial);
-    if (!device) throw new Error(PRINTER_OFF);
+    if (!device) throw new Error(await missingPrinterProblem(usb));
     const printer = new UsbPrinter(device);
     try {
       await device.open();
