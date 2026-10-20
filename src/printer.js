@@ -213,6 +213,7 @@ const GS = 0x1d;
 const QR_SCALE = 12; // printer dots per QR square
 const QR_MARGIN = 2; // blank squares above and below the code
 const PRINT_WIDTH = 360; // printable dots across 58 mm paper on the TM-m10
+const CUT_MARGIN = 0; // extra dots of paper fed below the last line before the cut
 
 // Prints `text` as a QR code, centered. The code is drawn here and sent as a raster image
 // (GS v 0) rather than with the printer's own QR command, whose size the printer limits. The
@@ -242,7 +243,7 @@ function localTime(sqliteUtc) {
 }
 
 // Adds the ticket for one entry to the printer's buffer. Empty optional fields are left out.
-export function buildEntryTicket(printer, { job, entry }) {
+export function buildEntryTicket(printer, entry) {
   const field = (label, value) => {
     if (!value) return;
     printer.bold(true);
@@ -254,14 +255,13 @@ export function buildEntryTicket(printer, { job, entry }) {
   printer.alignCenter();
   printer.bold(true);
   printer.setTextDoubleHeight();
-  printer.println(job.name);
+  printer.println(`${entry.rateRank} ${entry.firstName} ${entry.lastName}`);
   printer.setTextNormal();
   printer.bold(false);
   printer.println(localTime(entry.createdAt));
   printer.alignLeft();
   printer.drawLine();
 
-  field('Name', `${entry.rateRank} ${entry.firstName} ${entry.lastName} (${entry.payGrade})`);
   field('Department', entry.division ? `${entry.department} (${entry.division})` : entry.department);
 
   const stateZip = [entry.state, entry.zip].filter(Boolean).join(' ');
@@ -275,36 +275,35 @@ export function buildEntryTicket(printer, { job, entry }) {
     printer.println(entry.internalId);
     printer.bold(false);
   }
-  printer.cut();
+  // GS V 65 n: feed until the last line has passed the cutter, plus n dots, then cut. This
+  // leaves less blank paper than node-thermal-printer's cut(), which feeds 8 lines first.
+  printer.append(Buffer.from([GS, 0x56, 65, CUT_MARGIN]));
 }
 
-export async function printEntryTicket(printerName, ticket) {
+export async function printEntryTicket(printerName, entry) {
   const printer = createPrinter(printerName);
-  buildEntryTicket(printer, ticket);
+  buildEntryTicket(printer, entry);
   return printer.execute();
 }
 
-// A ticket filled with made-up details, to check the printer and the ticket layout.
-const TEST_TICKET = {
-  job: { name: 'Test Print' },
-  entry: {
-    internalId: '1234567',
-    rateRank: 'AO3',
-    firstName: 'Jane',
-    lastName: 'Doe',
-    payGrade: 'E-4',
-    department: 'Air',
-    division: 'V-1',
-    street: '123 Main St',
-    city: 'Norfolk',
-    state: 'VA',
-    zip: '23511',
-    primaryEmail: 'jane.doe@example.com',
-    secondaryEmail: 'family@example.com',
-  },
+// An entry filled with made-up details, to check the printer and the ticket layout.
+const TEST_ENTRY = {
+  internalId: '1234567',
+  rateRank: 'AO3',
+  firstName: 'Jane',
+  lastName: 'Doe',
+  payGrade: 'E-4',
+  department: 'Air',
+  division: 'V-1',
+  street: '123 Main St',
+  city: 'Norfolk',
+  state: 'VA',
+  zip: '23511',
+  primaryEmail: 'jane.doe@example.com',
+  secondaryEmail: 'family@example.com',
 };
 
 export async function printTestReceipt(printerName) {
   const now = new Date().toISOString().slice(0, 19).replace('T', ' '); // as SQLite stores it
-  return printEntryTicket(printerName, { ...TEST_TICKET, entry: { ...TEST_TICKET.entry, createdAt: now } });
+  return printEntryTicket(printerName, { ...TEST_ENTRY, createdAt: now });
 }
