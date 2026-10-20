@@ -91,7 +91,7 @@ checkButton.addEventListener('click', async () => {
   const { available, message, error } = await window.api.checkForUpdates();
   checkButton.disabled = false;
   if (available) {
-    setUpdateStatus(`Version ${available} is available. The kiosk restarts to install it.`);
+    setUpdateStatus(`Version ${available} is available. The application restarts to install it.`);
     installButton.hidden = false;
   } else {
     setUpdateStatus(error || message, Boolean(error));
