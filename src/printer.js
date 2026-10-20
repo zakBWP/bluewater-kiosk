@@ -48,8 +48,29 @@ async function loadWinspool() {
   const lib = koffi.load('winspool.drv');
   koffi.pointer('HANDLE', koffi.opaque());
   koffi.struct('DOC_INFO_1W', { pDocName: 'str16', pOutputFile: 'str16', pDatatype: 'str16' });
+  koffi.struct('PRINTER_INFO_2W', {
+    pServerName: 'str16', pPrinterName: 'str16', pShareName: 'str16', pPortName: 'str16',
+    pDriverName: 'str16', pComment: 'str16', pLocation: 'str16', pDevMode: 'void *',
+    pSepFile: 'str16', pPrintProcessor: 'str16', pDatatype: 'str16', pParameters: 'str16',
+    pSecurityDescriptor: 'void *', Attributes: 'uint32_t', Priority: 'uint32_t',
+    DefaultPriority: 'uint32_t', StartTime: 'uint32_t', UntilTime: 'uint32_t', Status: 'uint32_t',
+    cJobs: 'uint32_t', AveragePPM: 'uint32_t',
+  });
+  koffi.struct('SYSTEMTIME', {
+    wYear: 'uint16_t', wMonth: 'uint16_t', wDayOfWeek: 'uint16_t', wDay: 'uint16_t',
+    wHour: 'uint16_t', wMinute: 'uint16_t', wSecond: 'uint16_t', wMilliseconds: 'uint16_t',
+  });
+  koffi.struct('JOB_INFO_1W', {
+    JobId: 'uint32_t', pPrinterName: 'str16', pMachineName: 'str16', pUserName: 'str16',
+    pDocument: 'str16', pDatatype: 'str16', pStatus: 'str16', Status: 'uint32_t', Priority: 'uint32_t',
+    Position: 'uint32_t', TotalPages: 'uint32_t', PagesPrinted: 'uint32_t', Submitted: 'SYSTEMTIME',
+  });
   winspool = {
+    koffi,
     OpenPrinterW: lib.func('bool __stdcall OpenPrinterW(str16 pPrinterName, _Out_ HANDLE *phPrinter, void *pDefault)'),
+    GetPrinterW: lib.func('bool __stdcall GetPrinterW(HANDLE hPrinter, uint32_t Level, void *pPrinter, uint32_t cbBuf, _Out_ uint32_t *pcbNeeded)'),
+    GetJobW: lib.func('bool __stdcall GetJobW(HANDLE hPrinter, uint32_t JobId, uint32_t Level, void *pJob, uint32_t cbBuf, _Out_ uint32_t *pcbNeeded)'),
+    SetJobW: lib.func('bool __stdcall SetJobW(HANDLE hPrinter, uint32_t JobId, uint32_t Level, void *pJob, uint32_t Command)'),
     StartDocPrinterW: lib.func('uint32_t __stdcall StartDocPrinterW(HANDLE hPrinter, uint32_t Level, DOC_INFO_1W *pDocInfo)'),
     StartPagePrinter: lib.func('bool __stdcall StartPagePrinter(HANDLE hPrinter)'),
     WritePrinter: lib.func('bool __stdcall WritePrinter(HANDLE hPrinter, void *pBuf, uint32_t cbBuf, _Out_ uint32_t *pcWritten)'),
@@ -60,6 +81,67 @@ async function loadWinspool() {
   return winspool;
 }
 
+const PRINTER_OFF = 'The printer is off or unplugged.';
+const JOB_TIMEOUT = 5000; // ms to wait for the spooler to hand a ticket to the printer
+const JOB_POLL_INTERVAL = 250; // ms between job status checks
+
+const PRINTER_ATTRIBUTE_WORK_OFFLINE = 0x400;
+const PRINTER_STATUS = [
+  [0x00000010, 'The printer is out of paper. Load a new roll.'], // PAPER_OUT
+  [0x00000008, 'The paper is jammed. Open the cover, clear the paper, and close it.'], // PAPER_JAM
+  [0x00400000, 'The printer cover is open. Close it firmly.'], // DOOR_OPEN
+  [0x00000080, PRINTER_OFF], // OFFLINE
+  [0x00001000, PRINTER_OFF], // NOT_AVAILABLE
+  [0x00000001, 'The print queue is paused. Resume it in Printers & scanners.'], // PAUSED
+  [0x00100000, 'The printer needs attention. Check it, or turn it off and on again.'], // USER_INTERVENTION
+  [0x00000002, 'The printer reported an error. Turn it off and on again.'], // ERROR
+];
+const JOB_STATUS_DONE = 0x80 | 0x1000; // PRINTED | COMPLETE, when the queue keeps printed jobs
+const JOB_STATUS = [
+  [0x40, 'The printer is out of paper. Load a new roll.'], // PAPEROUT
+  [0x20, PRINTER_OFF], // OFFLINE
+  [0x400, 'The printer needs attention. Check it, or turn it off and on again.'], // USER_INTERVENTION
+  [0x2, PRINTER_OFF], // ERROR: usually the port couldn't reach the printer
+  [0x1, 'The ticket is paused in the print queue.'], // PAUSED
+];
+const JOB_CONTROL_DELETE = 5;
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Calls a winspool Get* function that fills a buffer of the size it asks for, and decodes it
+// as `type`. Returns null if there's nothing to get (such as a job that has left the queue).
+function getInfo(w, type, call) {
+  const needed = [0];
+  call(null, 0, needed);
+  if (!needed[0]) return null;
+  const buf = Buffer.alloc(needed[0]);
+  if (!call(buf, buf.length, needed)) return null;
+  return w.koffi.decode(buf, type);
+}
+
+// Returns a sentence describing why the printer can't print, or null if the queue looks ready.
+function windowsPrinterProblem(w, handle) {
+  const info = getInfo(w, 'PRINTER_INFO_2W', (buf, size, needed) => w.GetPrinterW(handle, 2, buf, size, needed));
+  if (!info) return null;
+  if (info.Attributes & PRINTER_ATTRIBUTE_WORK_OFFLINE) return PRINTER_OFF;
+  return PRINTER_STATUS.find(([bit]) => info.Status & bit)?.[1] ?? null;
+}
+
+// Waits until the spooler has handed the job to the printer. The spooler accepts a job even
+// when the printer is unplugged, so a job that stays queued or reports an error means the
+// ticket didn't reach it.
+async function waitForWindowsJob(w, handle, jobId) {
+  const deadline = Date.now() + JOB_TIMEOUT;
+  for (;;) {
+    const job = getInfo(w, 'JOB_INFO_1W', (buf, size, needed) => w.GetJobW(handle, jobId, 1, buf, size, needed));
+    if (!job || job.Status & JOB_STATUS_DONE) return;
+    const problem = JOB_STATUS.find(([bit]) => job.Status & bit)?.[1] ?? windowsPrinterProblem(w, handle);
+    if (problem) throw new Error(problem);
+    if (Date.now() > deadline) throw new Error(`${PRINTER_OFF} The ticket didn't reach it.`);
+    await sleep(JOB_POLL_INTERVAL);
+  }
+}
+
 async function sendRawWindows(printerName, data) {
   const w = await loadWinspool();
   const out = [null];
@@ -68,6 +150,9 @@ async function sendRawWindows(printerName, data) {
   }
   const handle = out[0];
   try {
+    const before = windowsPrinterProblem(w, handle);
+    if (before) throw new Error(before);
+
     const jobId = w.StartDocPrinterW(handle, 1, { pDocName: 'Receipt', pOutputFile: null, pDatatype: 'RAW' });
     if (!jobId) throw new Error('Could not start the print job.');
     try {
@@ -80,6 +165,13 @@ async function sendRawWindows(printerName, data) {
       }
     } finally {
       w.EndDocPrinter(handle);
+    }
+    try {
+      await waitForWindowsJob(w, handle, jobId);
+    } catch (err) {
+      // Drop the stuck ticket, so it doesn't print later once the printer is plugged back in.
+      w.SetJobW(handle, jobId, 0, null, JOB_CONTROL_DELETE);
+      throw err;
     }
     return `Print job ${jobId} sent`;
   } finally {
