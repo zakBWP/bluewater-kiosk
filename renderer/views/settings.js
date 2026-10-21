@@ -49,6 +49,8 @@ async function loadPrinters() {
   }
   printerSelect.replaceChildren(...options);
   if (installed || current.saved) printerSelect.value = current.name;
+  // Entries print to the saved name, so save whatever the dropdown fell back to showing.
+  if (!current.saved && printerSelect.value) window.api.setPrinterName(printerSelect.value);
   printButton.disabled = !printerSelect.value;
 }
 
