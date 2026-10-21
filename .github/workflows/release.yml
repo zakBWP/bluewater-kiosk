@@ -32,6 +32,14 @@ jobs:
 
       - run: npm ci
 
+      # electron-builder uploads files in parallel, and each upload creates the release if it can't
+      # find one, so without this they race and the files end up split across two releases.
+      - name: Create the release
+        shell: bash
+        run: gh release create "$GITHUB_REF_NAME" --title "${GITHUB_REF_NAME#v}" --verify-tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Build and publish
         run: npx electron-builder --win --publish always
         env:
